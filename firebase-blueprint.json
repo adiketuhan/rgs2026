@@ -1,0 +1,132 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "BENDAHARA", "PENGELOLA", "KOORDINATOR", "WARGA"] },
+        "name": { "type": "string" },
+        "floor": { "type": "number" }
+      },
+      "required": ["id", "username", "role", "name"]
+    },
+    "Unit": {
+      "title": "Unit",
+      "description": "Housing unit information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "block": { "type": "string" },
+        "floor": { "type": "number" },
+        "unitNumber": { "type": "string" },
+        "residentName": { "type": "string" },
+        "ktpNumber": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "initialMeter": { "type": "number" },
+        "isVacant": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "block", "floor", "unitNumber", "residentName", "initialMeter"]
+    },
+    "Billing": {
+      "title": "Billing",
+      "description": "Monthly billing record for a unit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "unitId": { "type": "string" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "meterPrev": { "type": "number" },
+        "meterCurrent": { "type": "number" },
+        "usage": { "type": "number" },
+        "waterBill": { "type": "number" },
+        "trashBill": { "type": "number" },
+        "debtPrev": { "type": "number" },
+        "totalBill": { "type": "number" },
+        "status": { "type": "string", "enum": ["LUNAS", "BELUM_LUNAS"] },
+        "isVacant": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "unitId", "month", "year", "meterPrev", "meterCurrent", "usage", "waterBill", "trashBill", "totalBill", "status"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "waterBaseRate": { "type": "number" },
+        "waterBaseLimit": { "type": "number" },
+        "waterExtraRate": { "type": "number" },
+        "trashRate": { "type": "number" },
+        "dueDay": { "type": "number" }
+      },
+      "required": ["waterBaseRate", "waterBaseLimit", "waterExtraRate", "trashRate", "dueDay"]
+    },
+    "FinanceTransaction": {
+      "title": "FinanceTransaction",
+      "description": "Financial income or expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "recordedBy": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "category", "description", "date", "recordedBy"]
+    },
+    "FundRequest": {
+      "title": "FundRequest",
+      "description": "Operational fund request from coordinator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "estimatedAmount": { "type": "number" },
+        "actualAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDING", "DISBURSED", "REPORTED", "COMPLETED", "REJECTED"] },
+        "requesterId": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "floor": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "receiptUrl": { "type": "string" },
+        "history": { "type": "array" }
+      },
+      "required": ["id", "title", "description", "estimatedAmount", "status", "requesterId", "requesterName", "floor", "createdAt", "history"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/units/{unitId}": {
+      "schema": "Unit",
+      "description": "Unit data"
+    },
+    "/billings/{billingId}": {
+      "schema": "Billing",
+      "description": "Billing records"
+    },
+    "/settings/global": {
+      "schema": "Settings",
+      "description": "Global settings"
+    },
+    "/finances/{transactionId}": {
+      "schema": "FinanceTransaction",
+      "description": "Financial transaction records"
+    },
+    "/fundRequests/{requestId}": {
+      "schema": "FundRequest",
+      "description": "Operational fund request records"
+    }
+  }
+}

@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - id: string (required)
+    //   - username: string (required)
+    //   - role: string (required, enum: ADMIN, BENDAHARA, PENGELOLA, KOORDINATOR, WARGA)
+    //   - name: string (required)
+    //   - floor: number (optional)
+    //
+    // Collection: units
+    // Document ID: unitId
+    // Fields:
+    //   - id: string (required)
+    //   - block: string (required)
+    //   - floor: number (required)
+    //   - unitNumber: string (required)
+    //   - residentName: string (required)
+    //   - ktpNumber: string (optional)
+    //   - phoneNumber: string (optional)
+    //   - initialMeter: number (required)
+    //   - isVacant: boolean (optional)
+    //   - createdAt: string (required)
+    //
+    // Collection: billings
+    // Document ID: billingId
+    // Fields:
+    //   - id: string (required)
+    //   - unitId: string (required)
+    //   - month: number (required)
+    //   - year: number (required)
+    //   - meterPrev: number (required)
+    //   - meterCurrent: number (required)
+    //   - usage: number (required)
+    //   - waterBill: number (required)
+    //   - trashBill: number (required)
+    //   - debtPrev: number (required)
+    //   - totalBill: number (required)
+    //   - status: string (required, enum: LUNAS, BELUM_LUNAS)
+    //   - isVacant: boolean (optional)
+    //   - updatedAt: string (required)
+    //   - updatedBy: string (required)
+    //
+    // Collection: settings
+    // Document ID: global
+    // Fields:
+    //   - waterBaseRate: number (required)
+    //   - waterBaseLimit: number (required)
+    //   - waterExtraRate: number (required)
+    //   - trashRate: number (required)
+    //   - dueDay: number (required)
+    //
+    // Collection: fundRequests
+    // Document ID: requestId
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required)
+    //   - description: string (required)
+    //   - estimatedAmount: number (required)
+    //   - actualAmount: number (optional)
+    //   - status: string (required, enum: PENDING, DISBURSED, REPORTED, COMPLETED, REJECTED)
+    //   - requesterId: string (required)
+    //   - requesterName: string (required)
+    //   - floor: number (required)
+    //   - createdAt: string (required)
+    //   - receiptUrl: string (optional)
+    //   - history: array (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && 
+             ((exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) && 
+               get(/databases/$(database)/documents/sessions/$(request.auth.uid)).data.role == role) ||
+              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role));
+    }
+
+    function isAdmin() {
+      return hasRole('ADMIN');
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if true; 
+      allow create: if isAdmin() || (request.resource.data.username == 'admin' && request.resource.data.role == 'ADMIN');
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /sessions/{uid} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow create: if isAuthenticated() && request.auth.uid == uid;
+      allow update: if isAuthenticated() && request.auth.uid == uid;
+      allow delete: if isAuthenticated() && request.auth.uid == uid;
+    }
+
+    match /units/{unitId} {
+      allow read: if true;
+      allow write: if isAdmin() || hasRole('PENGELOLA');
+    }
+
+    match /billings/{billingId} {
+      allow read: if true;
+      allow create: if isAdmin() || hasRole('PENGELOLA') || hasRole('KOORDINATOR');
+      allow update: if isAdmin() || hasRole('PENGELOLA') || hasRole('KOORDINATOR') || hasRole('BENDAHARA');
+      allow delete: if isAdmin();
+    }
+
+    match /settings/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /finances/{transactionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || hasRole('BENDAHARA');
+    }
+
+    match /fundRequests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if hasRole('KOORDINATOR');
+      allow update: if isAdmin() || hasRole('BENDAHARA') || (hasRole('KOORDINATOR') && resource.data.requesterId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+  }
+}
