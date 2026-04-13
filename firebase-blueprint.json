@@ -101,6 +101,22 @@
         "history": { "type": "array" }
       },
       "required": ["id", "title", "description", "estimatedAmount", "status", "requesterId", "requesterName", "floor", "createdAt", "history"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "Resident complaint record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "unitId": { "type": "string" },
+        "residentName": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "IN_PROGRESS", "RESOLVED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "response": { "type": "string" }
+      },
+      "required": ["id", "unitId", "residentName", "title", "description", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -127,6 +143,10 @@
     "/fundRequests/{requestId}": {
       "schema": "FundRequest",
       "description": "Operational fund request records"
+    },
+    "/complaints/{complaintId}": {
+      "schema": "Complaint",
+      "description": "Resident complaint records"
     }
   }
 }
