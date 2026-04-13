@@ -13,7 +13,7 @@ import {
   Download,
   Plus,
   Trash2,
-  History,
+  History as HistoryIcon,
   CheckCircle2,
   XCircle,
   Clock,
@@ -23,7 +23,7 @@ import {
   Users
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion } from "framer-motion";
 
 interface BendaharaDashboardProps {
   user: User;
@@ -70,7 +70,7 @@ export function BendaharaDashboard({ user, activeTab = "keuangan" }: BendaharaDa
   const [newFinance, setNewFinance] = useState<Partial<FinanceTransaction>>({
     type: "INCOME",
     amount: 0,
-    category: "",
+    category: "OTHER",
     description: "",
     date: new Date().toISOString().split('T')[0]
   });
@@ -95,7 +95,7 @@ export function BendaharaDashboard({ user, activeTab = "keuangan" }: BendaharaDa
     setNewFinance({
       type: "INCOME",
       amount: 0,
-      category: "",
+      category: "OTHER",
       description: "",
       date: new Date().toISOString().split('T')[0]
     });
@@ -472,7 +472,7 @@ export function BendaharaDashboard({ user, activeTab = "keuangan" }: BendaharaDa
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
                 >
                   {Array.from({ length: 12 }).map((_, i) => (
-                    <option key={i} value={i}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>
+                    <option key={i} value={i}>{new Date(2024, i).toLocaleString('id-ID', { month: 'long' })}</option>
                   ))}
                 </select>
                 <select 
@@ -545,7 +545,7 @@ export function BendaharaDashboard({ user, activeTab = "keuangan" }: BendaharaDa
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <History className="text-blue-600" />
+                <HistoryIcon className="text-blue-600" />
                 Riwayat Kas Paguyuban
               </h3>
               <button 
@@ -820,27 +820,12 @@ export function BendaharaDashboard({ user, activeTab = "keuangan" }: BendaharaDa
                 <select 
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
                   value={newFinance.category}
-                  onChange={(e) => setNewFinance({...newFinance, category: e.target.value})}
+                  onChange={(e) => setNewFinance({...newFinance, category: e.target.value as any})}
                   required
                 >
-                  <option value="">Pilih Kategori</option>
-                  {newFinance.type === "INCOME" ? (
-                    <>
-                      <option value="Iuran Sampah">Iuran Sampah</option>
-                      <option value="Iuran Air">Iuran Air</option>
-                      <option value="Donasi">Donasi</option>
-                      <option value="Lain-lain">Lain-lain</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="Listrik Umum">Listrik Umum</option>
-                      <option value="Kebersihan">Kebersihan</option>
-                      <option value="Keamanan">Keamanan</option>
-                      <option value="Perbaikan">Perbaikan</option>
-                      <option value="Dana Operasional">Dana Operasional</option>
-                      <option value="Lain-lain">Lain-lain</option>
-                    </>
-                  )}
+                  <option value="WATER">Air (PDAM)</option>
+                  <option value="TRASH">Sampah</option>
+                  <option value="OTHER">Lain-lain</option>
                 </select>
               </div>
               <div className="space-y-1">

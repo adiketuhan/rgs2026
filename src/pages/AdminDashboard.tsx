@@ -18,7 +18,7 @@ import {
   FileUp,
   Download,
   Wallet,
-  History,
+  History as HistoryIcon,
   TrendingUp,
   TrendingDown,
   CheckCircle2,
@@ -30,7 +30,7 @@ import {
   Edit3
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion } from "framer-motion";
 
 export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, activeTab?: string }) {
   const [units, setUnits] = useState<Unit[]>([]);
@@ -100,7 +100,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const [newFinance, setNewFinance] = useState<Partial<FinanceTransaction>>({
     type: "INCOME",
     amount: 0,
-    category: "",
+    category: "OTHER",
     description: "",
     date: new Date().toISOString().split('T')[0]
   });
@@ -125,7 +125,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     setNewFinance({
       type: "INCOME",
       amount: 0,
-      category: "",
+      category: "OTHER",
       description: "",
       date: new Date().toISOString().split('T')[0]
     });
@@ -401,6 +401,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                 debtPrev: runningDebt,
                 totalBill,
                 status: isLunas ? "LUNAS" : "BELUM_LUNAS",
+                housingPaymentStatus: "LUNAS",
                 isVacant,
                 updatedAt: new Date().toISOString(),
                 updatedBy: "admin"
@@ -499,6 +500,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
       debtPrev,
       totalBill: water + trash + debtPrev,
       status: "BELUM_LUNAS",
+      housingPaymentStatus: "LUNAS",
       isVacant: isVacantInput,
       updatedAt: new Date().toISOString(),
       updatedBy: user.id
@@ -539,8 +541,58 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     await Promise.all(savePromises);
   };
 
+  const toggleHousingStatus = async (unitId: string) => {
+    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
+    
+    if (existingBilling) {
+      const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
+      const updated: Billing = {
+        ...existingBilling,
+        housingPaymentStatus: newStatus as any,
+        housingUpdatedAt: new Date().toISOString(),
+        housingUpdatedBy: user.id
+      };
+      await db.saveBilling(updated);
+    } else {
+      // Create a skeleton billing record if it doesn't exist
+      const unit = units.find(u => u.id === unitId);
+      if (!unit) return;
+
+      const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+      const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
+      const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+      
+      const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+      const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+      const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
+      const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+
+      const newBilling: Billing = {
+        id: Math.random().toString(36).substr(2, 9),
+        unitId,
+        month: selectedMonth,
+        year: selectedYear,
+        meterPrev,
+        meterCurrent: meterPrev, // No usage yet
+        usage: 0,
+        waterBill: 0,
+        trashBill: 0,
+        debtPrev,
+        totalBill: debtPrev,
+        status: "BELUM_LUNAS",
+        housingPaymentStatus: "BELUM_LUNAS", // Default to unpaid if toggled from non-existent
+        isVacant: unit.isVacant,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.id,
+        housingUpdatedAt: new Date().toISOString(),
+        housingUpdatedBy: user.id
+      };
+      await db.saveBilling(newBilling);
+    }
+  };
+
   const getMonthName = (monthIndex: number) => {
-    return new Date(0, monthIndex).toLocaleString('id-ID', { month: 'long' });
+    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const filteredUnitsForBilling = units
@@ -651,6 +703,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
             debtPrev: cumulativeDebt,
             totalBill: water + trash + cumulativeDebt,
             status,
+            housingPaymentStatus: "LUNAS",
             isVacant,
             updatedAt: new Date().toISOString(),
             updatedBy: user.id
@@ -866,6 +919,164 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
           </div>
         )}
 
+        {/* Biaya Hunian Tab */}
+        {activeTab === "hunian" && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <Plus className="text-blue-600" />
+                    Input Status Biaya Hunian
+                  </h2>
+                  <p className="text-sm text-gray-500">Centang unit yang sudah bayar, uncheck yang belum bayar.</p>
+                </div>
+                <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                  <select 
+                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>{getMonthName(i)}</option>
+                    ))}
+                  </select>
+                  <select 
+                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  >
+                    {[2025, 2026, 2027].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {units.sort((a, b) => {
+                  if (a.floor !== b.floor) return a.floor - b.floor;
+                  return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
+                }).map(unit => {
+                  const billing = getUnitBilling(unit.id);
+                  const isPaid = billing ? billing.housingPaymentStatus === "LUNAS" : true; // Default to true (checked)
+
+                  return (
+                    <button
+                      key={unit.id}
+                      onClick={() => toggleHousingStatus(unit.id)}
+                      className={cn(
+                        "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 text-center relative overflow-hidden",
+                        isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+                      )}
+                    >
+                      <div className="absolute top-1 right-1">
+                        {isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                      </div>
+                      <span className="text-lg font-black">{unit.block}{unit.unitNumber}</span>
+                      <span className="text-[10px] font-bold uppercase opacity-70 truncate w-full px-1">{unit.residentName || "KOSONG"}</span>
+                      <div className={cn(
+                        "mt-1 px-2 py-0.5 rounded text-[8px] font-bold uppercase",
+                        isPaid ? "bg-green-600 text-white" : "bg-red-600 text-white"
+                      )}>
+                        {isPaid ? "LUNAS" : "BELUM"}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Keuangan Tab */}
+        {activeTab === "keuangan" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <StatCard icon={<Wallet className="text-blue-600" />} label="Total Saldo Paguyuban" value={formatCurrency(balance)} />
+              <StatCard icon={<TrendingUp className="text-green-600" />} label="Total Pemasukan Kas" value={formatCurrency(totalIncome)} />
+              <StatCard icon={<TrendingDown className="text-red-600" />} label="Total Pengeluaran Kas" value={formatCurrency(totalExpense)} />
+            </div>
+
+            {/* Approval Section */}
+            {finances.some(f => f.status === "PENDING") && (
+              <div className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100">
+                <h3 className="text-lg font-bold text-yellow-800 mb-4 flex items-center gap-2">
+                  <Clock className="text-yellow-600" />
+                  Menunggu Persetujuan Setoran
+                </h3>
+                <div className="space-y-3">
+                  {finances.filter(f => f.status === "PENDING").map(f => (
+                    <div key={f.id} className="bg-white p-4 rounded-xl border border-yellow-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <p className="font-bold text-gray-900">{f.description}</p>
+                        <p className="text-xs text-gray-500">
+                          Diajukan oleh {users.find(u => u.id === f.recordedBy)?.name || "Petugas"} pada {new Date(f.date).toLocaleString("id-ID")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-lg font-bold text-blue-600 mr-4">{formatCurrency(f.amount)}</p>
+                        <button 
+                          onClick={() => handleRejectFinance(f.id)}
+                          className="px-4 py-2 text-red-600 font-bold text-xs hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          Tolak
+                        </button>
+                        <button 
+                          onClick={() => handleApproveFinance(f.id)}
+                          className="px-4 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-all shadow-sm"
+                        >
+                          Setujui & Terima Uang
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Peringatan Tunggakan Section */}
+        {activeTab === "dashboard" && (
+          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 mb-8">
+            <h3 className="text-lg font-bold text-red-800 mb-4 flex items-center gap-2">
+              <AlertCircle className="text-red-600" />
+              Peringatan Tunggakan (PDAM & Hunian)
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {billings
+                .filter(b => b.month === selectedMonth && b.year === selectedYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS"))
+                .map(b => {
+                  const unit = units.find(u => u.id === b.unitId);
+                  if (!unit) return null;
+                  return (
+                    <div key={b.id} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-black text-gray-900">{unit.block}{unit.unitNumber}</p>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">{unit.residentName}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {b.status === "BELUM_LUNAS" && (
+                            <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">PDAM</span>
+                          )}
+                          {b.housingPaymentStatus === "BELUM_LUNAS" && (
+                            <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Hunian</span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-red-600 font-bold">Total: {formatCurrency(b.totalBill)}</p>
+                    </div>
+                  );
+                })}
+            </div>
+            {billings.filter(b => b.month === selectedMonth && b.year === selectedYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")).length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-4">Tidak ada tunggakan bulan ini.</p>
+            )}
+          </div>
+        )}
+
         {/* Keuangan Tab */}
         {activeTab === "keuangan" && (
           <div className="space-y-8">
@@ -912,7 +1123,6 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
               </div>
             )}
 
-            {/* Monthly Report Section */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -926,7 +1136,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                     onChange={(e) => setSelectedMonth(Number(e.target.value))}
                   >
                     {Array.from({ length: 12 }).map((_, i) => (
-                      <option key={i} value={i}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>
+                      <option key={i} value={i}>{new Date(2024, i).toLocaleString('id-ID', { month: 'long' })}</option>
                     ))}
                   </select>
                   <select 
@@ -998,7 +1208,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <History className="text-blue-600" />
+                  <HistoryIcon className="text-blue-600" />
                   Riwayat Kas Paguyuban
                 </h2>
                 <button 
@@ -1124,14 +1334,16 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase">Kategori</label>
-                  <input 
-                    type="text"
+                  <select 
                     required
                     value={newFinance.category}
-                    onChange={(e) => setNewFinance({ ...newFinance, category: e.target.value })}
-                    className="w-full p-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600"
-                    placeholder="Misal: Iuran Sampah, Perbaikan Pipa"
-                  />
+                    onChange={(e) => setNewFinance({ ...newFinance, category: e.target.value as any })}
+                    className="w-full p-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 font-bold"
+                  >
+                    <option value="WATER">Air (PDAM)</option>
+                    <option value="TRASH">Sampah</option>
+                    <option value="OTHER">Lain-lain</option>
+                  </select>
                 </div>
 
                 <div className="space-y-2">

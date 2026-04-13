@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { User } from "../types";
 import { supabase } from "../lib/supabase";
 import { Droplets, User as UserIcon, Lock, CreditCard, ArrowRight, Loader2 } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
@@ -125,7 +125,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <Droplets size={32} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Rusunawa Gunungsari</h1>
-          <p className="text-gray-500 mt-1">Sistem Tagihan Air dan Iuran Sampah</p>
+          <p className="text-gray-500 mt-1">Sistem Tagihan Air Paguyuban</p>
         </div>
 
         <div className="p-8">

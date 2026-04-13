@@ -12,7 +12,8 @@ import {
   AlertCircle, 
   Wallet,
   LayoutDashboard,
-  UserPlus
+  UserPlus,
+  History as HistoryIcon
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -103,6 +104,12 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
                 onClick={() => handleTabClick("tagihan")}
               />
               <SidebarLink 
+                icon={<Home size={20} />} 
+                label="Biaya Hunian" 
+                active={activeTab === "hunian"} 
+                onClick={() => handleTabClick("hunian")}
+              />
+              <SidebarLink 
                 icon={<UserPlus size={20} />} 
                 label="Manajemen Petugas" 
                 active={activeTab === "petugas"} 
@@ -138,7 +145,7 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
                 onClick={() => handleTabClick("INPUT")}
               />
               <SidebarLink 
-                icon={<History size={20} />} 
+                icon={<HistoryIcon size={20} />} 
                 label="Riwayat" 
                 active={activeTab === "HISTORY"} 
                 onClick={() => handleTabClick("HISTORY")}
@@ -188,6 +195,12 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
                 label="Catat Meter / Tagihan" 
                 active={activeTab === "tagihan"} 
                 onClick={() => handleTabClick("tagihan")}
+              />
+              <SidebarLink 
+                icon={<Home size={20} />} 
+                label="Biaya Hunian" 
+                active={activeTab === "hunian"} 
+                onClick={() => handleTabClick("hunian")}
               />
               <SidebarLink 
                 icon={<AlertCircle size={20} />} 

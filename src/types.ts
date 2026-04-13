@@ -44,9 +44,12 @@ export interface Billing {
   debtPrev: number;
   totalBill: number;
   status: "LUNAS" | "BELUM_LUNAS";
+  housingPaymentStatus: "LUNAS" | "BELUM_LUNAS";
   isVacant: boolean;
   updatedAt: string;
   updatedBy: string;
+  housingUpdatedAt?: string;
+  housingUpdatedBy?: string;
   notes?: string;
 }
 

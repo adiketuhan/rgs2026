@@ -11,7 +11,6 @@ import {
   Save, 
   ChevronRight,
   AlertTriangle,
-  History,
   Info,
   RefreshCw,
   Camera,
@@ -27,7 +26,7 @@ import {
   Trash2
 } from "lucide-react";
 import { formatCurrency, cn, compressImage } from "../lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface KoorDashboardProps {
   user: User;
@@ -207,7 +206,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
   };
 
   const getMonthName = (monthIndex: number) => {
-    return new Date(0, monthIndex).toLocaleString('id-ID', { month: 'long' });
+    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const getUnitBilling = (unitId: string) => {
@@ -298,6 +297,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       debtPrev,
       totalBill: water + trash + debtPrev,
       status: "BELUM_LUNAS",
+      housingPaymentStatus: "LUNAS",
       isVacant: isVacantInput,
       updatedAt: new Date().toISOString(),
       updatedBy: user.id
@@ -432,7 +432,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
                 >
                   {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i} value={i}>{new Date(0, i).toLocaleString('id-ID', { month: 'long' })}</option>
+                    <option key={i} value={i}>{new Date(2024, i).toLocaleString('id-ID', { month: 'long' })}</option>
                   ))}
                 </select>
               </div>
@@ -1015,7 +1015,6 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
                     <input 
                       type="number" 
                       placeholder="0"
-                      autoFocus
                       className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-xl text-2xl font-black focus:bg-white focus:border-blue-500 outline-none transition-all"
                       value={meterInput}
                       onChange={(e) => setMeterInput(e.target.value)}

@@ -13,45 +13,48 @@ import { BendaharaDashboard } from "./pages/BendaharaDashboard";
 import { PengelolaDashboard } from "./pages/PengelolaDashboard";
 import { WargaDashboard } from "./pages/WargaDashboard";
 
-function ErrorBoundary({ children }: { children: ReactNode }) {
-  const [hasError, setHasError] = useState(false);
-  const [errorInfo, setErrorInfo] = useState("");
-
-  useEffect(() => {
-    const handleError = (event: ErrorEvent) => {
-      setHasError(true);
-      setErrorInfo(event.error?.message || "Unknown error");
-    };
-    window.addEventListener("error", handleError);
-    return () => window.removeEventListener("error", handleError);
-  }, []);
-
-  if (hasError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Terjadi Kesalahan</h1>
-          <p className="text-gray-600 mb-6">Aplikasi mengalami kendala teknis. Silakan muat ulang halaman.</p>
-          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left overflow-auto max-h-40">
-            <code className="text-xs text-red-500">{errorInfo}</code>
-          </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
-          >
-            Muat Ulang Halaman
-          </button>
-        </div>
-      </div>
-    );
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, errorInfo: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorInfo: "" };
   }
 
-  return <>{children}</>;
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, errorInfo: error.message || "Unknown error" };
+  }
+
+  componentDidCatch(error: any, errorInfo: React.ErrorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Terjadi Kesalahan</h1>
+            <p className="text-gray-600 mb-6">Aplikasi mengalami kendala teknis. Silakan muat ulang halaman.</p>
+            <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left overflow-auto max-h-40">
+              <code className="text-xs text-red-500">{this.state.errorInfo}</code>
+            </div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+            >
+              Muat Ulang Halaman
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -64,6 +67,15 @@ export default function App() {
     if (localSession) {
       const userData = JSON.parse(localSession) as User;
       setUser(userData);
+      
+      // Set initial tab based on role
+      if (userData.role === "KOORDINATOR") {
+        setAdminTab("INPUT");
+      } else if (userData.role === "BENDAHARA") {
+        setAdminTab("keuangan");
+      } else if (userData.role === "PENGELOLA") {
+        setAdminTab("dashboard");
+      }
       
       // Sync session to Supabase if needed
       const syncSession = async () => {
@@ -128,7 +140,7 @@ export default function App() {
                   user={user} 
                   onLogout={handleLogout} 
                   activeTab={user.role === "ADMIN" ? adminTab : undefined}
-                  onTabChange={user.role === "ADMIN" ? setAdminTab : undefined}
+                  onTabChange={setAdminTab}
                 >
                   <DashboardRouter user={user} adminTab={adminTab} />
                 </Layout>

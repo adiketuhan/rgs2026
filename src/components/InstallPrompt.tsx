@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, X, Share } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);

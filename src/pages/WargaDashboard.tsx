@@ -8,7 +8,7 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
-  History,
+  History as HistoryIcon,
   Info,
   Calendar,
   TrendingUp,
@@ -16,7 +16,7 @@ import {
   PieChart
 } from "lucide-react";
 import { formatCurrency, cn, getMonthName } from "../lib/utils";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 interface WargaDashboardProps {
   user: User;
@@ -77,6 +77,11 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
 
   return (
     <div className="max-w-md mx-auto space-y-6 pb-24">
+      <div className="flex items-center gap-3 mb-2">
+        <Droplets className="text-blue-600" size={28} />
+        <h1 className="text-2xl font-black text-gray-900">PDAM dan Iuran Sampah</h1>
+      </div>
+
       {/* Tab Switcher */}
       <div className="flex bg-gray-100 p-1 rounded-2xl">
         <button
@@ -158,6 +163,15 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
                   <span className="text-gray-500 font-medium">Iuran Sampah</span>
                   <span className="text-gray-900 font-bold">{formatCurrency(billing.trashBill)}</span>
                 </div>
+                <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-50">
+                  <span className="text-gray-500 font-medium">Status Biaya Hunian</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                    billing.housingPaymentStatus === "LUNAS" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                  )}>
+                    {billing.housingPaymentStatus === "LUNAS" ? "SUDAH BAYAR" : "BELUM BAYAR"}
+                  </span>
+                </div>
                 {billing.debtPrev > 0 && (
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-red-500 font-medium">Tunggakan Bulan Lalu</span>
@@ -170,19 +184,24 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
                 </div>
               </div>
 
-              {billing.status === "BELUM_LUNAS" ? (
+              {billing.status === "BELUM_LUNAS" || billing.housingPaymentStatus === "BELUM_LUNAS" ? (
                 <div className="space-y-4">
                   <div className={cn(
                     "p-4 rounded-2xl flex items-start gap-3",
-                    isOverdue ? "bg-red-100 text-red-700" : "bg-blue-50 text-blue-700"
+                    (isOverdue || billing.housingPaymentStatus === "BELUM_LUNAS") ? "bg-red-100 text-red-700" : "bg-blue-50 text-blue-700"
                   )}>
-                    {isOverdue ? <AlertTriangle size={20} /> : <Clock size={20} />}
+                    {(isOverdue || billing.housingPaymentStatus === "BELUM_LUNAS") ? <AlertTriangle size={20} /> : <Clock size={20} />}
                     <div className="text-xs leading-relaxed">
                       <p className="font-bold mb-1 uppercase tracking-wider">
-                        {isOverdue ? "Jatuh Tempo!" : "Batas Pembayaran"}
+                        {(isOverdue || billing.housingPaymentStatus === "BELUM_LUNAS") ? "Peringatan Penting!" : "Batas Pembayaran"}
                       </p>
                       <p className="opacity-80">
-                        Mohon segera lakukan pembayaran ke Koordinator Lantai {unit.floor} sebelum tanggal {settings.dueDay} setiap bulannya.
+                        {billing.housingPaymentStatus === "BELUM_LUNAS" && billing.status === "BELUM_LUNAS" 
+                          ? "Anda belum membayar PDAM & Biaya Hunian. " 
+                          : billing.housingPaymentStatus === "BELUM_LUNAS" 
+                            ? "Anda belum membayar Biaya Hunian ke Pengelola. "
+                            : "Anda belum membayar tagihan PDAM. "}
+                        Sesuai aturan, jika salah satu atau kedua kewajiban belum dibayar, aliran listrik ke unit Anda akan diputus sementara oleh petugas.
                       </p>
                     </div>
                   </div>
@@ -255,7 +274,7 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between px-2">
               <h3 className="font-black text-gray-900 text-sm uppercase tracking-wider">Riwayat Transaksi</h3>
-              <History size={16} className="text-gray-400" />
+              <HistoryIcon size={16} className="text-gray-400" />
             </div>
 
             <div className="space-y-3">

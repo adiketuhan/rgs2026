@@ -16,19 +16,21 @@ import {
   CheckCircle2,
   XCircle,
   Edit3,
+  AlertCircle,
   Save,
   RefreshCw
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 
 interface PengelolaDashboardProps {
   user: User;
   activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaDashboardProps) {
+export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange }: PengelolaDashboardProps) {
   const [billings, setBillings] = useState<Billing[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [settings, setSettings] = useState<Settings>({
@@ -72,7 +74,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaD
   const currentMonthBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear);
 
   const overdueList = currentMonthBillings
-    .filter(b => b.status === "BELUM_LUNAS")
+    .filter(b => b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")
     .map(b => {
       const unit = units.find(u => u.id === b.unitId);
       return {
@@ -167,6 +169,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaD
       debtPrev,
       totalBill: water + trash + debtPrev,
       status: "BELUM_LUNAS",
+      housingPaymentStatus: "LUNAS",
       isVacant: isVacantInput,
       updatedAt: new Date().toISOString(),
       updatedBy: user.id
@@ -194,8 +197,57 @@ export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaD
     await db.saveBilling(updatedBilling);
   };
 
+  const toggleHousingStatus = async (unitId: string) => {
+    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
+    
+    if (existingBilling) {
+      const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
+      const updated: Billing = {
+        ...existingBilling,
+        housingPaymentStatus: newStatus as any,
+        housingUpdatedAt: new Date().toISOString(),
+        housingUpdatedBy: user.id
+      };
+      await db.saveBilling(updated);
+    } else {
+      const unit = units.find(u => u.id === unitId);
+      if (!unit) return;
+
+      const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+      const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
+      const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+      
+      const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+      const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+      const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
+      const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+
+      const newBilling: Billing = {
+        id: Math.random().toString(36).substr(2, 9),
+        unitId,
+        month: selectedMonth,
+        year: selectedYear,
+        meterPrev,
+        meterCurrent: meterPrev,
+        usage: 0,
+        waterBill: 0,
+        trashBill: 0,
+        debtPrev,
+        totalBill: debtPrev,
+        status: "BELUM_LUNAS",
+        housingPaymentStatus: "BELUM_LUNAS",
+        isVacant: unit.isVacant,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.id,
+        housingUpdatedAt: new Date().toISOString(),
+        housingUpdatedBy: user.id
+      };
+      await db.saveBilling(newBilling);
+    }
+  };
+
   const getMonthName = (monthIndex: number) => {
-    return new Date(0, monthIndex).toLocaleString('id-ID', { month: 'long' });
+    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const filteredUnits = units
@@ -292,6 +344,97 @@ export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaD
       </div>
 
       {/* Content */}
+      {(activeTab === "tagihan" || activeTab === "penunggak") && (
+        <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <AlertCircle className="text-red-600" size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-red-800">Peringatan Tunggakan</p>
+              <p className="text-xs text-red-600">
+                Ada {billings.filter(b => b.month === currentMonth && b.year === currentYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")).length} unit yang belum melunasi kewajiban bulan ini.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => onTabChange && onTabChange("penunggak")}
+            className="text-xs font-bold text-red-700 hover:underline"
+          >
+            Lihat Detail
+          </button>
+        </div>
+      )}
+
+      {activeTab === "hunian" && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Edit3 className="text-blue-600" />
+                  Input Status Biaya Hunian
+                </h2>
+                <p className="text-sm text-gray-500">Centang unit yang sudah bayar, uncheck yang belum bayar.</p>
+              </div>
+              <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                <select 
+                  className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <option key={i} value={i}>{getMonthName(i)}</option>
+                  ))}
+                </select>
+                <select 
+                  className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                >
+                  {[2025, 2026, 2027].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {units.sort((a, b) => {
+                if (a.floor !== b.floor) return a.floor - b.floor;
+                return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
+              }).map(unit => {
+                const billing = getUnitBilling(unit.id);
+                const isPaid = billing ? billing.housingPaymentStatus === "LUNAS" : true;
+
+                return (
+                  <button
+                    key={unit.id}
+                    onClick={() => toggleHousingStatus(unit.id)}
+                    className={cn(
+                      "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 text-center relative overflow-hidden",
+                      isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+                    )}
+                  >
+                    <div className="absolute top-1 right-1">
+                      {isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                    </div>
+                    <span className="text-lg font-black">{unit.block}{unit.unitNumber}</span>
+                    <span className="text-[10px] font-bold uppercase opacity-70 truncate w-full px-1">{unit.residentName || "KOSONG"}</span>
+                    <div className={cn(
+                      "mt-1 px-2 py-0.5 rounded text-[8px] font-bold uppercase",
+                      isPaid ? "bg-green-600 text-white" : "bg-red-600 text-white"
+                    )}>
+                      {isPaid ? "LUNAS" : "BELUM"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === "tagihan" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredUnits.map(unit => {
@@ -399,7 +542,14 @@ export function PengelolaDashboard({ user, activeTab = "dashboard" }: PengelolaD
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-red-600">{formatCurrency(item.totalBill)}</p>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Total Tunggakan</p>
+                  <div className="flex flex-col items-end gap-1 mt-1">
+                    {item.status === "BELUM_LUNAS" && (
+                      <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">Nunggak PDAM</span>
+                    )}
+                    {item.housingPaymentStatus === "BELUM_LUNAS" && (
+                      <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Nunggak Hunian</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
