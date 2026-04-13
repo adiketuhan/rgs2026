@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Billing, Unit, Settings, User } from "../types";
+import { Billing, Unit, Settings, User, Complaint } from "../types";
 import { db } from "../db";
 import { 
   AlertTriangle, 
@@ -18,7 +18,9 @@ import {
   Edit3,
   AlertCircle,
   Save,
-  RefreshCw
+  RefreshCw,
+  Home,
+  Check
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,6 +35,7 @@ interface PengelolaDashboardProps {
 export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange }: PengelolaDashboardProps) {
   const [billings, setBillings] = useState<Billing[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [settings, setSettings] = useState<Settings>({
     waterBaseRate: 25000,
     waterBaseLimit: 10,
@@ -43,13 +46,11 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFloor, setSelectedFloor] = useState<number | "ALL">("ALL");
   
-  // Meter Input States
+  // States
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
-  const [meterInput, setMeterInput] = useState("");
-  const [isVacantInput, setIsVacantInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [complaintResponse, setComplaintResponse] = useState<{id: string, text: string} | null>(null);
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
@@ -59,11 +60,13 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     const unsubscribeBillings = db.subscribeBillings(setBillings);
     const unsubscribeUnits = db.subscribeUnits(setUnits);
     const unsubscribeSettings = db.subscribeSettings(setSettings);
+    const unsubscribeComplaints = db.subscribeComplaints(setComplaints);
     
     return () => {
       unsubscribeBillings();
       unsubscribeUnits();
       unsubscribeSettings();
+      unsubscribeComplaints();
     };
   }, []);
 
@@ -108,93 +111,21 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     XLSX.writeFile(wb, `Daftar_Penunggak_Rusunawa_${new Date().toLocaleDateString()}.xlsx`);
   };
 
-  // Meter Input Logic
   const getUnitBilling = (unitId: string) => {
     return billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
   };
 
-  const calculateBill = (usage: number, isVacant: boolean) => {
-    if (isVacant) return { water: 0, trash: 0 };
-    let waterBill = usage <= settings.waterBaseLimit ? settings.waterBaseRate : settings.waterBaseRate + (usage - settings.waterBaseLimit) * settings.waterExtraRate;
-    return { water: waterBill, trash: settings.trashRate };
-  };
-
-  const recalculateUnitBillings = (unitId: string, currentBillings: Billing[]) => {
-    let updatedBillings = [...currentBillings];
-    const unitBillings = updatedBillings.filter(b => b.unitId === unitId).sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month));
-    unitBillings.forEach((b, index) => {
-      if (index === 0) return;
-      const prev = unitBillings[index - 1];
-      const debtPrev = prev.status === "BELUM_LUNAS" ? prev.totalBill : 0;
-      updatedBillings = updatedBillings.map(mainB => {
-        if (mainB.id === b.id) return { ...mainB, debtPrev, totalBill: mainB.waterBill + mainB.trashBill + debtPrev };
-        return mainB;
-      });
-    });
-    return updatedBillings;
-  };
-
-  const currentPrevMeter = selectedUnit ? (
-    billings
-      .filter(b => b.unitId === selectedUnit.id)
-      .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))
-      .find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth))?.meterCurrent || selectedUnit.initialMeter
-  ) : 0;
-
-  const handleSaveMeter = async () => {
-    if (!selectedUnit || meterInput === "") return;
-    const meterCurrent = Number(meterInput);
-    if (meterCurrent < currentPrevMeter && !isVacantInput) {
-      alert(`Meteran baru (${meterCurrent}) tidak boleh lebih kecil dari meteran sebelumnya (${currentPrevMeter})`);
-      return;
-    }
-    setIsSaving(true);
-    const usage = Math.max(0, meterCurrent - currentPrevMeter);
-    const { water, trash } = calculateBill(usage, isVacantInput);
-    const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
-    const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-    const lastMonthBilling = billings.find(b => b.unitId === selectedUnit.id && b.month === lastMonth && b.year === lastYear);
-    const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
-
-    const newBilling: Billing = {
-      id: Math.random().toString(36).substr(2, 9),
-      unitId: selectedUnit.id,
-      month: selectedMonth,
-      year: selectedYear,
-      meterPrev: currentPrevMeter,
-      meterCurrent,
-      usage,
-      waterBill: water,
-      trashBill: trash,
-      debtPrev,
-      totalBill: water + trash + debtPrev,
-      status: "BELUM_LUNAS",
-      housingPaymentStatus: "LUNAS",
-      isVacant: isVacantInput,
-      updatedAt: new Date().toISOString(),
-      updatedBy: user.id
-    };
-
-    const existingIndex = billings.findIndex(b => b.unitId === selectedUnit.id && b.month === selectedMonth && b.year === selectedYear);
-    let updatedBillings = [...billings];
-    if (existingIndex > -1) updatedBillings[existingIndex] = newBilling;
-    else updatedBillings.push(newBilling);
-    updatedBillings = recalculateUnitBillings(selectedUnit.id, updatedBillings);
-    await db.saveBilling(newBilling);
+  const handleResolveComplaint = async (complaintId: string, response: string) => {
+    const complaint = complaints.find(c => c.id === complaintId);
+    if (!complaint) return;
     
-    setTimeout(() => {
-      setIsSaving(false);
-      setSelectedUnit(null);
-      setMeterInput("");
-    }, 500);
-  };
-
-  const toggleStatus = async (billingId: string) => {
-    const billing = billings.find(b => b.id === billingId);
-    if (!billing) return;
-    const newStatus = billing.status === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
-    const updatedBilling = { ...billing, status: newStatus as any };
-    await db.saveBilling(updatedBilling);
+    const updated: Complaint = {
+      ...complaint,
+      status: "RESOLVED",
+      response
+    };
+    await db.saveComplaint(updated);
+    setComplaintResponse(null);
   };
 
   const toggleHousingStatus = async (unitId: string) => {
@@ -266,11 +197,20 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            {activeTab === "tagihan" ? <Droplets className="text-blue-600" /> : <AlertTriangle className="text-red-600" />}
-            {activeTab === "tagihan" ? "Catat Meter / Tagihan" : "Daftar Penunggak (Punishment)"}
+            {activeTab === "tagihan" ? <Droplets className="text-blue-600" /> : 
+             activeTab === "hunian" ? <Home className="text-indigo-600" /> :
+             activeTab === "keluhan" ? <MessageSquare className="text-purple-600" /> :
+             <AlertTriangle className="text-red-600" />}
+            {activeTab === "tagihan" ? "Monitoring Tagihan Air" : 
+             activeTab === "hunian" ? "Input Status Biaya Hunian" :
+             activeTab === "keluhan" ? "Keluhan Warga" :
+             "Daftar Penunggak (Punishment)"}
           </h2>
           <p className="text-gray-500">
-            {activeTab === "tagihan" ? "Input meteran air dan kelola status tagihan warga" : "Warga yang belum melunasi tagihan air & sampah"}
+            {activeTab === "tagihan" ? "Data tagihan air dari Koordinator Lantai" : 
+             activeTab === "hunian" ? "Kelola status pembayaran biaya hunian warga" :
+             activeTab === "keluhan" ? "Lihat dan respon keluhan dari warga" :
+             "Warga yang belum melunasi tagihan air & sampah"}
           </p>
         </div>
         {activeTab === "penunggak" && (
@@ -461,63 +401,106 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                   </div>
                   {billing && (
                     <div className="text-right">
-                      <p className="text-sm font-bold text-gray-900">{formatCurrency(billing.totalBill)}</p>
-                      <button 
-                        onClick={() => toggleStatus(billing.id)}
-                        className={cn(
-                          "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border mt-1",
-                          billing.status === "LUNAS" ? "bg-green-50 text-green-700 border-green-100" : "bg-red-50 text-red-700 border-red-100"
-                        )}
-                      >
+                      <p className="text-sm font-bold text-gray-900">{formatCurrency(billing.waterBill + billing.trashBill)}</p>
+                      <div className={cn(
+                        "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border mt-1",
+                        billing.status === "LUNAS" ? "bg-green-50 text-green-700 border-green-100" : "bg-red-50 text-red-700 border-red-100"
+                      )}>
                         {billing.status}
-                      </button>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                <div className="flex gap-2">
-                  {!billing ? (
-                    <button 
-                      onClick={() => {
-                        setSelectedUnit(unit);
-                        setIsVacantInput(unit.isVacant);
-                        const allUnitBillings = billings.filter(b => b.unitId === unit.id).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
-                        const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
-                        setMeterInput(prevBill ? prevBill.meterCurrent.toString() : unit.initialMeter.toString());
-                      }}
-                      className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-blue-700 transition-all"
-                    >
-                      Catat Meteran
-                    </button>
-                  ) : (
-                    <>
-                      <button 
-                        onClick={() => toggleStatus(billing.id)}
-                        className={cn(
-                          "flex-1 py-2.5 rounded-xl font-bold text-xs transition-all border",
-                          billing.status === "LUNAS" ? "bg-green-50 text-green-700 border-green-100" : "bg-red-50 text-red-700 border-red-100"
-                        )}
-                      >
-                        {billing.status === "LUNAS" ? "Tandai Belum Lunas" : "Tandai Lunas"}
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setSelectedUnit(unit);
-                          setMeterInput(billing.meterCurrent.toString());
-                          setIsVacantInput(billing.isVacant);
-                        }}
-                        className="w-10 h-10 bg-gray-50 text-gray-400 rounded-xl flex items-center justify-center hover:bg-gray-100 border border-gray-200"
-                      >
-                        <Edit3 size={16} />
-                      </button>
-                    </>
-                  )}
-                </div>
+                {!billing ? (
+                  <div className="p-3 bg-gray-50 rounded-xl border border-dashed border-gray-200 text-center">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Menunggu Input Koordinator</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase">
+                      <span>Pemakaian: {billing.usage} m³</span>
+                      <span>Meter: {billing.meterCurrent}</span>
+                    </div>
+                    <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, (billing.usage / 20) * 100)}%` }} />
+                    </div>
+                  </div>
+                )}
               </motion.div>
             );
           })}
         </div>
-      ) : (
+      ) : activeTab === "keluhan" ? (
+        <div className="space-y-6">
+          {complaints.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {complaints.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(c => {
+                const unit = units.find(u => u.id === c.unitId);
+                return (
+                  <motion.div 
+                    key={c.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center font-bold">
+                          {unit?.block}{unit?.unitNumber}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-gray-900">{c.title}</h4>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">{c.residentName} • {new Date(c.createdAt).toLocaleDateString("id-ID")}</p>
+                        </div>
+                      </div>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[8px] font-bold uppercase",
+                        c.status === "RESOLVED" ? "bg-green-100 text-green-700" :
+                        c.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
+                        "bg-amber-100 text-amber-700"
+                      )}>
+                        {c.status === "PENDING" ? "MENUNGGU" :
+                         c.status === "IN_PROGRESS" ? "DIPROSES" : "SELESAI"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-xl italic">"{c.description}"</p>
+                    
+                    {c.response ? (
+                      <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                        <p className="text-[10px] font-bold text-blue-600 uppercase mb-1">Respon Anda:</p>
+                        <p className="text-sm text-gray-700">{c.response}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <textarea 
+                          placeholder="Tulis respon atau tindakan..."
+                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                          rows={2}
+                          value={complaintResponse?.id === c.id ? complaintResponse.text : ""}
+                          onChange={(e) => setComplaintResponse({ id: c.id, text: e.target.value })}
+                        />
+                        <button 
+                          onClick={() => handleResolveComplaint(c.id, complaintResponse?.text || "Keluhan telah ditindaklanjuti.")}
+                          className="w-full bg-purple-600 text-white py-2 rounded-xl font-bold text-xs hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Check size={16} />
+                          Tandai Selesai
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
+              <MessageSquare size={48} className="mx-auto mb-4 text-gray-200" />
+              <p className="text-gray-500 font-medium">Belum ada keluhan dari warga</p>
+            </div>
+          )}
+        </div>
+      ) : activeTab === "penunggak" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {overdueList.length > 0 ? overdueList.map(item => (
             <motion.div 
@@ -591,94 +574,9 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
-      {/* Meter Input Modal */}
-      <AnimatePresence>
-        {selectedUnit && (
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b flex justify-between items-center bg-blue-600 text-white">
-                <div>
-                  <h3 className="text-xl font-bold">Catat Meteran Air</h3>
-                  <p className="text-xs text-blue-100 font-medium">Unit {selectedUnit.block}{selectedUnit.unitNumber} • {selectedUnit.residentName}</p>
-                </div>
-                <button onClick={() => setSelectedUnit(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <XCircle size={24} />
-                </button>
-              </div>
-              
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Bulan</p>
-                    <p className="text-sm font-bold text-gray-900">{getMonthName(selectedMonth)} {selectedYear}</p>
-                  </div>
-                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1">Meteran Lalu</p>
-                    <p className="text-sm font-bold text-blue-900">{currentPrevMeter} m³</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Angka Meteran Baru</label>
-                  <div className="relative">
-                    <Droplets className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500" size={20} />
-                    <input 
-                      type="number" 
-                      placeholder="0"
-                      autoFocus
-                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-xl text-2xl font-black focus:bg-white focus:border-blue-500 outline-none transition-all"
-                      value={meterInput}
-                      onChange={(e) => setMeterInput(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-orange-50 rounded-2xl border border-orange-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm">
-                      <Clock size={20} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-orange-800 uppercase tracking-wider">Status Unit</p>
-                      <p className="text-xs font-medium text-orange-700">Tandai jika unit kosong</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setIsVacantInput(!isVacantInput)}
-                    className={cn(
-                      "w-12 h-6 rounded-full transition-all relative",
-                      isVacantInput ? "bg-orange-500" : "bg-gray-200"
-                    )}
-                  >
-                    <div className={cn(
-                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                      isVacantInput ? "right-1" : "left-1"
-                    )} />
-                  </button>
-                </div>
-
-                <div className="pt-2">
-                  <button 
-                    onClick={handleSaveMeter}
-                    disabled={isSaving || meterInput === ""}
-                    className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
-                  >
-                    {isSaving ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />}
-                    SIMPAN DATA METERAN
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Meter Input Modal REMOVED - Pengelola doesn't input meter anymore */}
     </div>
   );
 }

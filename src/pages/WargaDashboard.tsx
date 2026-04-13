@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Billing, Unit, Settings, FinanceTransaction } from "../types";
+import { User, Billing, Unit, Settings, FinanceTransaction, Complaint } from "../types";
 import { db } from "../db";
 import { 
   Droplets, 
@@ -13,20 +13,27 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  PieChart
+  PieChart,
+  MessageSquare,
+  Send,
+  Plus
 } from "lucide-react";
 import { formatCurrency, cn, getMonthName } from "../lib/utils";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface WargaDashboardProps {
   user: User;
 }
 
 export function WargaDashboard({ user }: WargaDashboardProps) {
-  const [activeTab, setActiveTab] = useState<"billing" | "finance">("billing");
+  const [activeTab, setActiveTab] = useState<"billing" | "finance" | "complaint">("billing");
   const [billing, setBilling] = useState<Billing | null>(null);
   const [unit, setUnit] = useState<Unit | null>(null);
   const [finances, setFinances] = useState<FinanceTransaction[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [showComplaintForm, setShowComplaintForm] = useState(false);
+  const [newComplaint, setNewComplaint] = useState({ title: "", description: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [settings, setSettings] = useState<Settings>({
     waterBaseRate: 25000,
     waterBaseLimit: 10,
@@ -59,17 +66,45 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
       setFinances(data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     });
     
+    const unsubscribeComplaints = db.subscribeComplaints((data) => {
+      if (unit) {
+        setComplaints(data.filter(c => c.unitId === unit.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      }
+    });
+    
     return () => {
       unsubscribeUnits();
       unsubscribeBillings();
       unsubscribeSettings();
       unsubscribeFinances();
+      unsubscribeComplaints();
     };
-  }, [user.username, unit?.id]);
+  }, [user.username, unit?.id, currentMonth, currentYear]);
 
   if (!unit) return <div className="p-8 text-center text-gray-500">Data unit tidak ditemukan.</div>;
 
-  const isOverdue = isAfterDue && billing?.status === "BELUM_LUNAS";
+  const isOverdue = billing?.status === "BELUM_LUNAS" && isAfterDue;
+
+  const handleComplaintSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComplaint.title || !newComplaint.description) return;
+    setIsSubmitting(true);
+
+    const complaint: Complaint = {
+      id: Math.random().toString(36).substr(2, 9),
+      unitId: unit.id,
+      residentName: unit.residentName,
+      title: newComplaint.title,
+      description: newComplaint.description,
+      status: "PENDING",
+      createdAt: new Date().toISOString()
+    };
+
+    await db.saveComplaint(complaint);
+    setNewComplaint({ title: "", description: "" });
+    setShowComplaintForm(false);
+    setIsSubmitting(false);
+  };
 
   const totalIncome = finances.filter(f => f.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpense = finances.filter(f => f.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
@@ -103,6 +138,16 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
         >
           <PieChart size={16} />
           Keuangan
+        </button>
+        <button
+          onClick={() => setActiveTab("complaint")}
+          className={cn(
+            "flex-1 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2",
+            activeTab === "complaint" ? "bg-white shadow-sm text-blue-600" : "text-gray-500"
+          )}
+        >
+          <MessageSquare size={16} />
+          Keluhan
         </button>
       </div>
 
@@ -237,7 +282,7 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
             </div>
           </div>
         </>
-      ) : (
+      ) : activeTab === "finance" ? (
         <div className="space-y-6">
           {/* Transparency Notice */}
           <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex gap-3">
@@ -306,6 +351,105 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
               )}
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center px-2">
+            <h3 className="font-black text-gray-900 text-sm uppercase tracking-wider">Keluhan Saya</h3>
+            <button 
+              onClick={() => setShowComplaintForm(true)}
+              className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-100"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {complaints.length > 0 ? (
+              complaints.map((c) => (
+                <div key={c.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-bold text-gray-900">{c.title}</h4>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-[8px] font-bold uppercase",
+                      c.status === "RESOLVED" ? "bg-green-100 text-green-700" :
+                      c.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
+                      "bg-amber-100 text-amber-700"
+                    )}>
+                      {c.status === "PENDING" ? "MENUNGGU" :
+                       c.status === "IN_PROGRESS" ? "DIPROSES" : "SELESAI"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">{c.description}</p>
+                  <p className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleDateString("id-ID", { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  
+                  {c.response && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-[10px] font-bold text-blue-600 uppercase mb-1">Respon Pengelola:</p>
+                      <p className="text-xs text-gray-700 italic">"{c.response}"</p>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                <MessageSquare size={48} className="mx-auto mb-4 text-gray-200" />
+                <p className="text-xs text-gray-400 font-bold uppercase">Belum ada keluhan</p>
+              </div>
+            )}
+          </div>
+
+          <AnimatePresence>
+            {showComplaintForm && (
+              <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/50 backdrop-blur-sm">
+                <motion.div 
+                  initial={{ y: "100%" }}
+                  animate={{ y: 0 }}
+                  exit={{ y: "100%" }}
+                  className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden"
+                >
+                  <div className="p-6 border-b flex justify-between items-center bg-blue-600 text-white">
+                    <h3 className="text-xl font-bold">Kirim Keluhan</h3>
+                    <button onClick={() => setShowComplaintForm(false)} className="p-2 hover:bg-white/10 rounded-full">
+                      <Plus size={24} className="rotate-45" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleComplaintSubmit} className="p-6 space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Subjek / Judul</label>
+                      <input 
+                        type="text"
+                        required
+                        placeholder="Contoh: Kran Air Bocor"
+                        className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500 outline-none transition-all"
+                        value={newComplaint.title}
+                        onChange={(e) => setNewComplaint({...newComplaint, title: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Detail Keluhan</label>
+                      <textarea 
+                        required
+                        rows={4}
+                        placeholder="Jelaskan detail keluhan Anda..."
+                        className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500 outline-none transition-all resize-none"
+                        value={newComplaint.description}
+                        onChange={(e) => setNewComplaint({...newComplaint, description: e.target.value})}
+                      />
+                    </div>
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
+                    >
+                      <Send size={20} />
+                      {isSubmitting ? "MENGIRIM..." : "KIRIM KELUHAN"}
+                    </button>
+                  </form>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
         </div>
       )}
     </div>

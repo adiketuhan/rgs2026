@@ -1,4 +1,4 @@
-import { User, Unit, Billing, Settings, FinanceTransaction, FundRequest } from "./types";
+import { User, Unit, Billing, Settings, FinanceTransaction, FundRequest, Complaint } from "./types";
 import { supabase } from "./lib/supabase";
 
 const TABLES = {
@@ -7,7 +7,8 @@ const TABLES = {
   BILLINGS: "billings",
   SETTINGS: "settings",
   FINANCES: "finances",
-  FUND_REQUESTS: "fund_requests"
+  FUND_REQUESTS: "fund_requests",
+  COMPLAINTS: "complaints"
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -269,6 +270,47 @@ export const db = {
     } catch (error) {
       console.error("Error deleting fund request:", error);
     }
+  },
+
+  getComplaints: async (): Promise<Complaint[]> => {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.COMPLAINTS)
+        .select("*");
+      
+      if (error) throw error;
+      return data as Complaint[];
+    } catch (error) {
+      console.error("Error getting complaints:", error);
+      return [];
+    }
+  },
+
+  saveComplaint: async (complaint: Complaint) => {
+    try {
+      const { error } = await supabase
+        .from(TABLES.COMPLAINTS)
+        .upsert(complaint);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error saving complaint:", error);
+    }
+  },
+
+  subscribeComplaints: (callback: (complaints: Complaint[]) => void) => {
+    db.getComplaints().then(callback);
+
+    const channel = supabase
+      .channel('public:complaints')
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.COMPLAINTS }, () => {
+        db.getComplaints().then(callback);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   subscribeUnits: (callback: (units: Unit[]) => void) => {

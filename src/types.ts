@@ -95,3 +95,16 @@ export interface FundRequest {
   createdAt: string;
   history: FundRequestHistory[];
 }
+
+export type ComplaintStatus = "PENDING" | "IN_PROGRESS" | "RESOLVED";
+
+export interface Complaint {
+  id: string;
+  unitId: string;
+  residentName: string;
+  title: string;
+  description: string;
+  status: ComplaintStatus;
+  createdAt: string;
+  response?: string;
+}
