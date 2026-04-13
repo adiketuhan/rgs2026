@@ -125,7 +125,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <Droplets size={32} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Rusunawa Gunungsari</h1>
-          <p className="text-gray-500 mt-1">Sistem Tagihan Air Paguyuban</p>
+          <p className="text-gray-500 mt-1">Sistem Tagihan Air dan Iuran Sampah</p>
         </div>
 
         <div className="p-8">
