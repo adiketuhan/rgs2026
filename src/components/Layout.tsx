@@ -51,7 +51,7 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
       <header className="md:hidden bg-blue-600 text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div className="flex items-center gap-2">
           <Droplets className="w-6 h-6" />
-          <h1 className="font-bold text-lg">Rusunawa Air</h1>
+          <h1 className="font-bold text-lg">PDAM dan Iuran Sampah</h1>
         </div>
         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
           {isSidebarOpen ? <X /> : <Menu />}
@@ -65,7 +65,7 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
       )}>
         <div className="p-6 border-b hidden md:flex items-center gap-2 text-blue-600">
           <Droplets className="w-8 h-8" />
-          <h1 className="font-bold text-xl">Rusunawa Air</h1>
+          <h1 className="font-bold text-xl">PDAM dan Iuran Sampah</h1>
         </div>
 
         <div className="p-6 bg-blue-50 md:bg-transparent">
