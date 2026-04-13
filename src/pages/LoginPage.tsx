@@ -24,13 +24,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     try {
       if (isWarga) {
         // For Warga, search for the unit with matching KTP
-        const { data, error: queryError } = await supabase
+        const { data: units, error: queryError } = await supabase
           .from("units")
           .select("*")
           .eq("ktpNumber", ktp)
-          .maybeSingle();
+          .limit(1);
         
         if (queryError) throw queryError;
+        
+        const data = units && units.length > 0 ? units[0] : null;
         
         if (data) {
           const wargaUser: User = {
@@ -46,14 +48,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         }
       } else {
         // For Petugas, search Supabase "users" table for username and password
-        const { data: userData, error: queryError } = await supabase
+        const { data: users, error: queryError } = await supabase
           .from("users")
           .select("*")
           .eq("username", username)
           .eq("password", password)
-          .maybeSingle();
+          .limit(1);
         
         if (queryError) throw queryError;
+        
+        const userData = users && users.length > 0 ? users[0] : null;
         
         if (userData) {
           // Create a session in Supabase
@@ -101,8 +105,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         }
       }
     } catch (err: any) {
-      console.error("Login Error:", err);
-      setError("Terjadi kesalahan saat login. Silakan coba lagi.");
+      console.error("Login Error Details:", err);
+      const errorMessage = err.message || err.error_description || "Terjadi kesalahan saat login. Silakan coba lagi.";
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
