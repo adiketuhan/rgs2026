@@ -371,13 +371,15 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
         const currentMonth = new Date().getMonth();
         const currentYear = new Date().getFullYear();
         
-        const affectedBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear && !b.housingPaymentStatus);
+        const affectedBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear);
         
         for (const b of affectedBillings) {
-          await db.saveBilling({
-            ...b,
-            housingPaymentStatus: b.housingPaymentStatus || "LUNAS"
-          });
+          if (!b.housingPaymentStatus) {
+            await db.saveBilling({
+              ...b,
+              housingPaymentStatus: "LUNAS"
+            });
+          }
         }
         alert("Migrasi selesai!");
       } catch (err) {
