@@ -20,11 +20,13 @@ import {
   Save,
   RefreshCw,
   Home,
-  Check
+  Check,
+  Eye
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
+import { UnitDetailModal } from "../components/UnitDetailModal";
 
 interface PengelolaDashboardProps {
   user: User;
@@ -51,6 +53,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [isSaving, setIsSaving] = useState(false);
   const [complaintResponse, setComplaintResponse] = useState<{id: string, text: string} | null>(null);
+  const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
@@ -74,10 +77,14 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
   };
 
+  const getHousingOverdueMonths = (unitId: string) => {
+    return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
+  };
+
   const currentMonthBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear);
 
-  const overdueList = currentMonthBillings
-    .filter(b => b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")
+  const waterOverdueList = currentMonthBillings
+    .filter(b => b.status === "BELUM_LUNAS")
     .map(b => {
       const unit = units.find(u => u.id === b.unitId);
       return {
@@ -91,18 +98,34 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
       (item.unit?.unitNumber.includes(searchTerm) || item.unit?.residentName.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
+  const housingOverdueList = currentMonthBillings
+    .filter(b => b.housingPaymentStatus === "BELUM_LUNAS")
+    .map(b => {
+      const unit = units.find(u => u.id === b.unitId);
+      return {
+        ...b,
+        unit,
+        overdueCount: getHousingOverdueMonths(b.unitId)
+      };
+    })
+    .filter(item => 
+      (selectedFloor === "ALL" || item.unit?.floor === selectedFloor) &&
+      (item.unit?.unitNumber.includes(searchTerm) || item.unit?.residentName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
   const exportToExcel = () => {
-    const data = overdueList.map(item => ({
+    const data = [...waterOverdueList, ...housingOverdueList].map(item => ({
       "Unit": `${item.unit?.block}${item.unit?.unitNumber}`,
       "Lantai": item.unit?.floor,
       "Nama Penghuni": item.unit?.residentName,
       "No. KTP": item.unit?.ktpNumber,
       "No. HP": item.unit?.phoneNumber,
-      "Tagihan Bulan Ini": item.waterBill + item.trashBill,
-      "Tunggakan Lalu": item.debtPrev,
-      "Total Tagihan": item.totalBill,
-      "Bulan Menunggak": item.overdueCount,
-      "Status": item.status
+      "Tagihan Air": item.waterBill + item.trashBill,
+      "Tunggakan Air": item.status === "BELUM_LUNAS" ? "YA" : "TIDAK",
+      "Tunggakan Hunian": item.housingPaymentStatus === "BELUM_LUNAS" ? "YA" : "TIDAK",
+      "Bulan Menunggak Air": getOverdueMonths(item.unitId),
+      "Bulan Menunggak Hunian": getHousingOverdueMonths(item.unitId),
+      "Total Tagihan": item.totalBill
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -501,82 +524,173 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
           )}
         </div>
       ) : activeTab === "penunggak" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {overdueList.length > 0 ? overdueList.map(item => (
-            <motion.div 
-              key={item.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                "bg-white p-6 rounded-2xl shadow-sm border-2 transition-all relative overflow-hidden",
-                isAfterDue ? "border-red-100" : "border-gray-50"
-              )}
-            >
-              {isAfterDue && (
-                <div className="absolute top-0 right-0 bg-red-600 text-white px-3 py-1 rounded-bl-xl text-[10px] font-bold uppercase tracking-widest">
-                  Jatuh Tempo
-                </div>
-              )}
-
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{item.unit?.block}{item.unit?.unitNumber}</h3>
-                  <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-red-600">{formatCurrency(item.totalBill)}</p>
-                  <div className="flex flex-col items-end gap-1 mt-1">
-                    {item.status === "BELUM_LUNAS" && (
-                      <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">Nunggak PDAM</span>
-                    )}
-                    {item.housingPaymentStatus === "BELUM_LUNAS" && (
-                      <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Nunggak Hunian</span>
-                    )}
-                  </div>
-                </div>
+        <div className="space-y-12">
+          {/* Penunggak Air Section */}
+          <section>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-blue-100 rounded-xl">
+                <Droplets className="text-blue-600" size={24} />
               </div>
-
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <Clock className="text-orange-500" size={18} />
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase font-bold">Durasi Tunggakan</p>
-                    <p className="text-sm font-bold text-gray-900">{item.overdueCount} Bulan</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <UserX className="text-red-500" size={18} />
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase font-bold">Nama Penghuni</p>
-                    <p className="text-sm font-bold text-gray-900">{item.unit?.residentName}</p>
-                  </div>
-                </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Tunggakan Air & Sampah</h3>
+                <p className="text-sm text-gray-500">Daftar warga yang belum melunasi tagihan air bulan ini.</p>
               </div>
-
-              <div className="flex gap-2">
-                <button className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-all">
-                  <StickyNote size={16} />
-                  Catat Tindakan
-                </button>
-                <button 
-                  onClick={() => window.open(`https://wa.me/${item.unit?.phoneNumber.replace(/\D/g, '')}`, '_blank')}
-                  className="w-12 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all"
-                >
-                  <MessageSquare size={18} />
-                </button>
-              </div>
-            </motion.div>
-          )) : (
-            <div className="col-span-full py-20 text-center text-gray-400">
-              <UserX size={64} className="mx-auto mb-4 opacity-10" />
-              <p className="text-lg font-medium">Tidak ada warga yang menunggak</p>
-              <p className="text-sm">Semua warga telah melunasi tagihan bulan ini.</p>
             </div>
-          )}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {waterOverdueList.length > 0 ? waterOverdueList.map(item => (
+                <motion.div 
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn(
+                    "bg-white p-6 rounded-2xl shadow-sm border-2 transition-all relative overflow-hidden",
+                    isAfterDue ? "border-red-100" : "border-gray-50"
+                  )}
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <button 
+                        onClick={() => setDetailUnit(item.unit!)}
+                        className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
+                      >
+                        {item.unit?.block}{item.unit?.unitNumber}
+                      </button>
+                      <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-red-600">{formatCurrency(item.totalBill)}</p>
+                      <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">PDAM</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <Clock className="text-orange-500" size={18} />
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase font-bold">Durasi Tunggakan</p>
+                        <p className="text-sm font-bold text-gray-900">{item.overdueCount} Bulan</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <UserX className="text-red-500" size={18} />
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase font-bold">Nama Penghuni</p>
+                        <p className="text-sm font-bold text-gray-900">{item.unit?.residentName}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setDetailUnit(item.unit!)}
+                      className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                    >
+                      <Eye size={16} />
+                      Detail
+                    </button>
+                    <button 
+                      onClick={() => window.open(`https://wa.me/${item.unit?.phoneNumber.replace(/\D/g, '')}`, '_blank')}
+                      className="w-12 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all"
+                    >
+                      <MessageSquare size={18} />
+                    </button>
+                  </div>
+                </motion.div>
+              )) : (
+                <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                  <p className="font-medium">Tidak ada tunggakan air</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Penunggak Hunian Section */}
+          <section>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-orange-100 rounded-xl">
+                <Home className="text-orange-600" size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Tunggakan Iuran Hunian</h3>
+                <p className="text-sm text-gray-500">Daftar warga yang belum melunasi iuran hunian.</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {housingOverdueList.length > 0 ? housingOverdueList.map(item => (
+                <motion.div 
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-50 transition-all relative overflow-hidden"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <button 
+                        onClick={() => setDetailUnit(item.unit!)}
+                        className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
+                      >
+                        {item.unit?.block}{item.unit?.unitNumber}
+                      </button>
+                      <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Hunian</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <Clock className="text-orange-500" size={18} />
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase font-bold">Total Piutang</p>
+                        <p className="text-sm font-bold text-gray-900">{item.overdueCount} Bulan</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <UserX className="text-red-500" size={18} />
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase font-bold">Nama Penghuni</p>
+                        <p className="text-sm font-bold text-gray-900">{item.unit?.residentName}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setDetailUnit(item.unit!)}
+                      className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
+                    >
+                      <Eye size={16} />
+                      Detail
+                    </button>
+                    <button 
+                      onClick={() => window.open(`https://wa.me/${item.unit?.phoneNumber.replace(/\D/g, '')}`, '_blank')}
+                      className="w-12 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all"
+                    >
+                      <MessageSquare size={18} />
+                    </button>
+                  </div>
+                </motion.div>
+              )) : (
+                <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                  <p className="font-medium">Tidak ada tunggakan hunian</p>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       ) : null}
 
-      {/* Meter Input Modal REMOVED - Pengelola doesn't input meter anymore */}
+      {/* Unit Detail Modal */}
+      {detailUnit && (
+        <UnitDetailModal 
+          unit={detailUnit} 
+          user={user} 
+          onClose={() => setDetailUnit(null)} 
+        />
+      )}
     </div>
   );
 }

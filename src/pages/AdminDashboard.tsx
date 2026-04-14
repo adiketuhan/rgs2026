@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Unit, Settings, User, Billing, FinanceTransaction, FundRequest } from "../types";
+import { Unit, Settings, User, Billing, FinanceTransaction, FundRequest, FundRequestStatus, Complaint } from "../types";
 import { db } from "../db";
 import * as XLSX from "xlsx";
 import { MIGRATION_DATA } from "../data/migrationData";
@@ -27,10 +27,12 @@ import {
   FileText,
   AlertCircle,
   Eye,
-  Edit3
+  Edit3,
+  MessageSquare
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
+import { UnitDetailModal } from "../components/UnitDetailModal";
 
 export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, activeTab?: string }) {
   const [units, setUnits] = useState<Unit[]>([]);
@@ -60,6 +62,8 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [newUnit, setNewUnit] = useState<Partial<Unit>>({
     block: "A",
     floor: 1,
@@ -78,6 +82,8 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     floor: 1
   });
 
+  const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
+
   useEffect(() => {
     const unsubscribeUnits = db.subscribeUnits(setUnits);
     const unsubscribeBillings = db.subscribeBillings(setBillings);
@@ -85,6 +91,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     const unsubscribeUsers = db.subscribeUsers(setUsers);
     const unsubscribeFinances = db.subscribeFinances(setFinances);
     const unsubscribeFundRequests = db.subscribeFundRequests(setFundRequests);
+    const unsubscribeComplaints = db.subscribeComplaints(setComplaints);
     
     return () => {
       unsubscribeUnits();
@@ -93,8 +100,58 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
       unsubscribeUsers();
       unsubscribeFinances();
       unsubscribeFundRequests();
+      unsubscribeComplaints();
     };
   }, []);
+
+  // Auto-create billings for current month if they don't exist (Auto-Lunas Housing)
+  useEffect(() => {
+    if (units.length > 0 && billings.length > 0) {
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      const missingUnits = units.filter(u => !billings.some(b => b.unitId === u.id && b.month === currentMonth && b.year === currentYear));
+      
+      if (missingUnits.length > 0) {
+        const createMissingBillings = async () => {
+          const newBillings: Billing[] = missingUnits.map(u => {
+            const allUnitBillings = billings.filter(b => b.unitId === u.id).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+            const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (currentYear * 12 + currentMonth));
+            const meterPrev = prevBill ? prevBill.meterCurrent : u.initialMeter;
+            
+            const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+            const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+            const lastMonthBilling = billings.find(b => b.unitId === u.id && b.month === lastMonth && b.year === lastYear);
+            const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+
+            return {
+              id: Math.random().toString(36).substr(2, 9),
+              unitId: u.id,
+              month: currentMonth,
+              year: currentYear,
+              meterPrev,
+              meterCurrent: meterPrev,
+              usage: 0,
+              waterBill: 0,
+              trashBill: 0,
+              debtPrev,
+              totalBill: debtPrev,
+              status: "BELUM_LUNAS",
+              housingPaymentStatus: "LUNAS", // Default to LUNAS
+              isVacant: u.isVacant,
+              updatedAt: new Date().toISOString(),
+              updatedBy: "system"
+            };
+          });
+          
+          for (const b of newBillings) {
+            await db.saveBilling(b);
+          }
+        };
+        createMissingBillings();
+      }
+    }
+  }, [units, billings]);
 
   const [showAddFinance, setShowAddFinance] = useState(false);
   const [newFinance, setNewFinance] = useState<Partial<FinanceTransaction>>({
@@ -303,6 +360,59 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const handleDeleteUnit = async (id: string) => {
     if (confirm("Hapus data unit ini? Semua riwayat tagihan unit ini juga akan dihapus.")) {
       await db.deleteUnit(id);
+    }
+  };
+
+  const handleRunMigration = async () => {
+    if (confirm("Jalankan migrasi data? Ini akan mensinkronisasi status pembayaran hunian.")) {
+      setIsMigrating(true);
+      try {
+        // Migration logic: Ensure all current month billings have housingPaymentStatus
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        
+        const affectedBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear && !b.housingPaymentStatus);
+        
+        for (const b of affectedBillings) {
+          await db.saveBilling({
+            ...b,
+            housingPaymentStatus: b.housingPaymentStatus || "LUNAS"
+          });
+        }
+        alert("Migrasi selesai!");
+      } catch (err) {
+        console.error("Migration error:", err);
+        alert("Migrasi gagal.");
+      } finally {
+        setIsMigrating(false);
+      }
+    }
+  };
+
+  const handleFixComplaints = async () => {
+    if (complaints.length === 0 || units.length === 0) return;
+    
+    setIsMigrating(true);
+    let fixedCount = 0;
+    
+    try {
+      for (const complaint of complaints) {
+        const unit = units.find(u => u.id === complaint.unitId);
+        if (unit && complaint.floor !== unit.floor) {
+          const updated: Complaint = {
+            ...complaint,
+            floor: unit.floor
+          };
+          await db.saveComplaint(updated);
+          fixedCount++;
+        }
+      }
+      alert(`Berhasil memperbaiki ${fixedCount} data keluhan.`);
+    } catch (err) {
+      console.error("Error fixing complaints:", err);
+      alert("Terjadi kesalahan saat memperbaiki data keluhan.");
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -824,7 +934,12 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                       {filteredUnitsForWarga.length > 0 ? filteredUnitsForWarga.map(unit => (
                         <tr key={unit.id} className="hover:bg-gray-50 transition-colors group">
                           <td className="py-4 px-2">
-                            <span className="font-bold text-gray-900">{unit.block}{unit.unitNumber}</span>
+                            <button 
+                              onClick={() => setDetailUnit(unit)}
+                              className="font-bold text-gray-900 hover:text-blue-600 transition-colors text-left"
+                            >
+                              {unit.block}{unit.unitNumber}
+                            </button>
                             <p className="text-xs text-gray-400">Lantai {unit.floor}</p>
                           </td>
                           <td className="py-4 px-2">
@@ -841,6 +956,13 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                           </td>
                           <td className="py-4 px-2 text-right">
                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => setDetailUnit(unit)}
+                                className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                title="Lihat Riwayat"
+                              >
+                                <Eye size={16} />
+                              </button>
                               <button 
                                 onClick={() => setEditingUnit(unit)}
                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1505,6 +1627,28 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                 Simpan Semua Pengaturan
               </button>
             </form>
+
+            <div className="mt-12 pt-8 border-t border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Pemeliharaan Data</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button 
+                  onClick={handleRunMigration}
+                  disabled={isMigrating}
+                  className="flex items-center justify-center gap-2 p-4 bg-gray-50 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all border border-gray-200 disabled:opacity-50"
+                >
+                  <RefreshCw size={20} className={isMigrating ? "animate-spin" : ""} />
+                  Migrasi Data Lama
+                </button>
+                <button 
+                  onClick={handleFixComplaints}
+                  disabled={isMigrating}
+                  className="flex items-center justify-center gap-2 p-4 bg-gray-50 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all border border-gray-200 disabled:opacity-50"
+                >
+                  <MessageSquare size={20} />
+                  Perbaiki Data Keluhan
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2248,6 +2392,14 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
             </form>
           </motion.div>
         </div>
+      )}
+      {/* Unit Detail Modal */}
+      {detailUnit && (
+        <UnitDetailModal 
+          unit={detailUnit} 
+          user={user} 
+          onClose={() => setDetailUnit(null)} 
+        />
       )}
     </div>
   );

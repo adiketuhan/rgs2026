@@ -24,10 +24,12 @@ import {
   AlertCircle,
   ArrowRight,
   Trash2,
-  Check
+  Check,
+  Eye
 } from "lucide-react";
 import { formatCurrency, cn, compressImage } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { UnitDetailModal } from "../components/UnitDetailModal";
 
 interface KoorDashboardProps {
   user: User;
@@ -61,6 +63,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
   const [meterInput, setMeterInput] = useState("");
   const [isVacantInput, setIsVacantInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
 
   const [fundRequests, setFundRequests] = useState<FundRequest[]>([]);
   const [showAddRequest, setShowAddRequest] = useState(false);
@@ -507,13 +510,18 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
                 <div className="flex items-start justify-between mb-5">
                   <div className="flex items-center gap-4">
                     <div className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center font-bold text-base transition-all border",
+                      "w-12 h-12 rounded-xl flex items-center justify-center font-bold text-base transition-all border cursor-pointer hover:scale-105",
                       billing ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-400 border-gray-100"
-                    )}>
+                    )} onClick={() => setDetailUnit(unit)}>
                       {unit.block}{unit.unitNumber}
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900 text-base tracking-tight leading-tight">{unit.residentName}</h3>
+                      <button 
+                        onClick={() => setDetailUnit(unit)}
+                        className="font-bold text-gray-900 text-base tracking-tight leading-tight hover:text-blue-600 transition-colors text-left"
+                      >
+                        {unit.residentName}
+                      </button>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Lantai {unit.floor}</span>
                         {unit.isVacant && (
@@ -575,6 +583,12 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
                         className="w-11 h-11 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all shadow-md shadow-green-100"
                       >
                         <MessageSquare size={18} />
+                      </button>
+                      <button 
+                        onClick={() => setDetailUnit(unit)}
+                        className="w-11 h-11 bg-white text-gray-400 rounded-xl flex items-center justify-center hover:bg-gray-50 transition-all border border-gray-200"
+                      >
+                        <Eye size={18} />
                       </button>
                       <button 
                         onClick={() => {
@@ -1166,6 +1180,15 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
           </div>
         )}
       </AnimatePresence>
+
+      {/* Unit Detail Modal */}
+      {detailUnit && (
+        <UnitDetailModal 
+          unit={detailUnit} 
+          user={user} 
+          onClose={() => setDetailUnit(null)} 
+        />
+      )}
     </div>
   );
 }
