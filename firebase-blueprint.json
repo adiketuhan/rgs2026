@@ -48,11 +48,15 @@
         "debtPrev": { "type": "number" },
         "totalBill": { "type": "number" },
         "status": { "type": "string", "enum": ["LUNAS", "BELUM_LUNAS"] },
+        "housingPaymentStatus": { "type": "string", "enum": ["LUNAS", "BELUM_LUNAS"] },
         "isVacant": { "type": "boolean" },
         "updatedAt": { "type": "string", "format": "date-time" },
-        "updatedBy": { "type": "string" }
+        "updatedBy": { "type": "string" },
+        "housingUpdatedAt": { "type": "string", "format": "date-time" },
+        "housingUpdatedBy": { "type": "string" },
+        "notes": { "type": "string" }
       },
-      "required": ["id", "unitId", "month", "year", "meterPrev", "meterCurrent", "usage", "waterBill", "trashBill", "totalBill", "status"]
+      "required": ["id", "unitId", "month", "year", "meterPrev", "meterCurrent", "usage", "waterBill", "trashBill", "totalBill", "status", "housingPaymentStatus"]
     },
     "Settings": {
       "title": "Settings",
@@ -75,12 +79,19 @@
         "id": { "type": "string" },
         "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
         "amount": { "type": "number" },
-        "category": { "type": "string" },
+        "category": { "type": "string", "enum": ["WATER", "TRASH", "OTHER"] },
         "description": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
-        "recordedBy": { "type": "string" }
+        "recordedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "floor": { "type": "number" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "fundRequestId": { "type": "string" }
       },
-      "required": ["id", "type", "amount", "category", "description", "date", "recordedBy"]
+      "required": ["id", "type", "amount", "category", "description", "date", "recordedBy", "status"]
     },
     "FundRequest": {
       "title": "FundRequest",
@@ -109,6 +120,7 @@
       "properties": {
         "id": { "type": "string" },
         "unitId": { "type": "string" },
+        "floor": { "type": "number" },
         "residentName": { "type": "string" },
         "title": { "type": "string" },
         "description": { "type": "string" },
@@ -116,7 +128,7 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "response": { "type": "string" }
       },
-      "required": ["id", "unitId", "residentName", "title", "description", "status", "createdAt"]
+      "required": ["id", "unitId", "floor", "residentName", "title", "description", "status", "createdAt"]
     }
   },
   "firestore": {
