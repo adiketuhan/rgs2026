@@ -93,6 +93,7 @@ export function WargaDashboard({ user }: WargaDashboardProps) {
     const complaint: Complaint = {
       id: Math.random().toString(36).substr(2, 9),
       unitId: unit.id,
+      floor: unit.floor,
       residentName: unit.residentName,
       title: newComplaint.title,
       description: newComplaint.description,
