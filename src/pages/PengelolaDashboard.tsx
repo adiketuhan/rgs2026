@@ -7,21 +7,22 @@ import {
   Download, 
   FileSpreadsheet, 
   Filter, 
-  ChevronRight,
-  Clock,
-  UserX,
-  MessageSquare,
-  StickyNote,
-  Droplets,
-  CheckCircle2,
-  XCircle,
-  Edit3,
-  AlertCircle,
-  Save,
-  RefreshCw,
-  Home,
-  Check,
-  Eye
+  ChevronRight, 
+  Clock, 
+  UserX, 
+  MessageSquare, 
+  StickyNote, 
+  Droplets, 
+  CheckCircle2, 
+  XCircle, 
+  Edit3, 
+  AlertCircle, 
+  Save, 
+  RefreshCw, 
+  Home, 
+  Check, 
+  Eye,
+  LayoutDashboard
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -152,51 +153,59 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   };
 
   const toggleHousingStatus = async (unitId: string) => {
-    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-    
-    if (existingBilling) {
-      const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
-      const updated: Billing = {
-        ...existingBilling,
-        housingPaymentStatus: newStatus as any,
-        housingUpdatedAt: new Date().toISOString(),
-        housingUpdatedBy: user.id
-      };
-      await db.saveBilling(updated);
-    } else {
-      const unit = units.find(u => u.id === unitId);
-      if (!unit) return;
-
-      const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
-      const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
-      const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
       
-      const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
-      const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-      const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
-      const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+      if (existingBilling) {
+        const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
+        const updated: Billing = {
+          ...existingBilling,
+          housingPaymentStatus: newStatus as any,
+          housingUpdatedAt: new Date().toISOString(),
+          housingUpdatedBy: user.id
+        };
+        await db.saveBilling(updated);
+      } else {
+        const unit = units.find(u => u.id === unitId);
+        if (!unit) return;
 
-      const newBilling: Billing = {
-        id: Math.random().toString(36).substr(2, 9),
-        unitId,
-        month: selectedMonth,
-        year: selectedYear,
-        meterPrev,
-        meterCurrent: meterPrev,
-        usage: 0,
-        waterBill: 0,
-        trashBill: 0,
-        debtPrev,
-        totalBill: debtPrev,
-        status: "BELUM_LUNAS",
-        housingPaymentStatus: "BELUM_LUNAS",
-        isVacant: unit.isVacant,
-        updatedAt: new Date().toISOString(),
-        updatedBy: user.id,
-        housingUpdatedAt: new Date().toISOString(),
-        housingUpdatedBy: user.id
-      };
-      await db.saveBilling(newBilling);
+        const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+        const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
+        const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+        
+        const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
+        const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+
+        const newBilling: Billing = {
+          id: Math.random().toString(36).substr(2, 9),
+          unitId,
+          month: selectedMonth,
+          year: selectedYear,
+          meterPrev,
+          meterCurrent: meterPrev,
+          usage: 0,
+          waterBill: 0,
+          trashBill: 0,
+          debtPrev,
+          totalBill: debtPrev,
+          status: "BELUM_LUNAS",
+          housingPaymentStatus: "BELUM_LUNAS",
+          isVacant: unit.isVacant,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.id,
+          housingUpdatedAt: new Date().toISOString(),
+          housingUpdatedBy: user.id
+        };
+        await db.saveBilling(newBilling);
+      }
+    } catch (err) {
+      console.error("Error toggling housing status:", err);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -374,9 +383,11 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                   <button
                     key={unit.id}
                     onClick={() => toggleHousingStatus(unit.id)}
+                    disabled={isSaving}
                     className={cn(
                       "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 text-center relative overflow-hidden",
-                      isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+                      isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700",
+                      isSaving && "opacity-50 cursor-not-allowed"
                     )}
                   >
                     <div className="absolute top-1 right-1">

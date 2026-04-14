@@ -139,10 +139,10 @@ export default function App() {
                 <Layout 
                   user={user} 
                   onLogout={handleLogout} 
-                  activeTab={user.role === "ADMIN" ? adminTab : undefined}
+                  activeTab={adminTab}
                   onTabChange={setAdminTab}
                 >
-                  <DashboardRouter user={user} adminTab={adminTab} />
+                  <DashboardRouter user={user} adminTab={adminTab} onTabChange={setAdminTab} />
                 </Layout>
               ) : (
                 <Navigate to="/login" />
@@ -157,7 +157,7 @@ export default function App() {
   );
 }
 
-function DashboardRouter({ user, adminTab }: { user: User, adminTab?: string }) {
+function DashboardRouter({ user, adminTab, onTabChange }: { user: User, adminTab?: string, onTabChange: (tab: string) => void }) {
   switch (user.role) {
     case "ADMIN":
       return <AdminDashboard user={user} activeTab={adminTab as any} />;
@@ -166,7 +166,7 @@ function DashboardRouter({ user, adminTab }: { user: User, adminTab?: string }) 
     case "BENDAHARA":
       return <BendaharaDashboard user={user} activeTab={adminTab} />;
     case "PENGELOLA":
-      return <PengelolaDashboard user={user} activeTab={adminTab} />;
+      return <PengelolaDashboard user={user} activeTab={adminTab} onTabChange={onTabChange} />;
     case "WARGA":
       return <WargaDashboard user={user} />;
     default:

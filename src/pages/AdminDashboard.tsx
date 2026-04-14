@@ -63,6 +63,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isAutoBilling, setIsAutoBilling] = useState(false);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [newUnit, setNewUnit] = useState<Partial<Unit>>({
     block: "A",
@@ -106,7 +107,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
 
   // Auto-create billings for current month if they don't exist (Auto-Lunas Housing)
   useEffect(() => {
-    if (units.length > 0 && billings.length > 0) {
+    if (units.length > 0 && billings.length > 0 && !isAutoBilling) {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       
@@ -114,44 +115,56 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
       
       if (missingUnits.length > 0) {
         const createMissingBillings = async () => {
-          const newBillings: Billing[] = missingUnits.map(u => {
-            const allUnitBillings = billings.filter(b => b.unitId === u.id).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
-            const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (currentYear * 12 + currentMonth));
-            const meterPrev = prevBill ? prevBill.meterCurrent : u.initialMeter;
-            
-            const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-            const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-            const lastMonthBilling = billings.find(b => b.unitId === u.id && b.month === lastMonth && b.year === lastYear);
-            const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+          setIsAutoBilling(true);
+          try {
+            const newBillings: Billing[] = missingUnits.map(u => {
+              const allUnitBillings = billings.filter(b => b.unitId === u.id).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+              const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (currentYear * 12 + currentMonth));
+              const meterPrev = prevBill ? prevBill.meterCurrent : u.initialMeter;
+              
+              const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+              const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+              const lastMonthBilling = billings.find(b => b.unitId === u.id && b.month === lastMonth && b.year === lastYear);
+              const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
 
-            return {
-              id: Math.random().toString(36).substr(2, 9),
-              unitId: u.id,
-              month: currentMonth,
-              year: currentYear,
-              meterPrev,
-              meterCurrent: meterPrev,
-              usage: 0,
-              waterBill: 0,
-              trashBill: 0,
-              debtPrev,
-              totalBill: debtPrev,
-              status: "BELUM_LUNAS",
-              housingPaymentStatus: "LUNAS", // Default to LUNAS
-              isVacant: u.isVacant,
-              updatedAt: new Date().toISOString(),
-              updatedBy: "system"
-            };
-          });
-          
-          for (const b of newBillings) {
-            await db.saveBilling(b);
+              return {
+                id: Math.random().toString(36).substr(2, 9),
+                unitId: u.id,
+                month: currentMonth,
+                year: currentYear,
+                meterPrev,
+                meterCurrent: meterPrev,
+                usage: 0,
+                waterBill: 0,
+                trashBill: 0,
+                debtPrev,
+                totalBill: debtPrev,
+                status: "BELUM_LUNAS",
+                housingPaymentStatus: "LUNAS", // Default to LUNAS
+                isVacant: u.isVacant,
+                updatedAt: new Date().toISOString(),
+                updatedBy: "system"
+              };
+            });
+            
+            // Save in chunks to avoid overwhelming Supabase
+            const chunkSize = 10;
+            for (let i = 0; i < newBillings.length; i += chunkSize) {
+              const chunk = newBillings.slice(i, i + chunkSize);
+              await Promise.all(chunk.map(b => db.saveBilling(b)));
+            }
+          } catch (err) {
+            console.error("Auto-billing error:", err);
+          } finally {
+            // We don't set isAutoBilling to false immediately to prevent immediate re-run
+            // The subscription will eventually update billings and missingUnits will be 0
+            setTimeout(() => setIsAutoBilling(false), 5000);
           }
         };
         createMissingBillings();
       }
     }
-  }, [units, billings]);
+  }, [units, billings, isAutoBilling]);
 
   const [showAddFinance, setShowAddFinance] = useState(false);
   const [newFinance, setNewFinance] = useState<Partial<FinanceTransaction>>({
