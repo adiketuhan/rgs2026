@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Unit, Billing, Settings, FundRequest, FundRequestStatus, FinanceTransaction } from "../types";
+import { User, Unit, Billing, Settings, FundRequest, FundRequestStatus, FinanceTransaction, Complaint } from "../types";
 import { db } from "../db";
 import { 
   Droplets, 
@@ -23,7 +23,8 @@ import {
   Clock,
   AlertCircle,
   ArrowRight,
-  Trash2
+  Trash2,
+  Check
 } from "lucide-react";
 import { formatCurrency, cn, compressImage } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -34,11 +35,11 @@ interface KoorDashboardProps {
 }
 
 export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardProps) {
-  const [activeTab, setActiveTab] = useState<"INPUT" | "HISTORY" | "DANA" | "SETORAN">("INPUT");
+  const [activeTab, setActiveTab] = useState<"INPUT" | "HISTORY" | "DANA" | "SETORAN" | "KELUHAN">("INPUT");
 
   useEffect(() => {
     if (propActiveTab) {
-      setActiveTab(propActiveTab);
+      setActiveTab(propActiveTab as any);
     }
   }, [propActiveTab]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -46,6 +47,8 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
   const [units, setUnits] = useState<Unit[]>([]);
   const [billings, setBillings] = useState<Billing[]>([]);
   const [finances, setFinances] = useState<FinanceTransaction[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [complaintResponse, setComplaintResponse] = useState<{ id: string, text: string } | null>(null);
   const [settings, setSettings] = useState<Settings>({
     waterBaseRate: 25000,
     waterBaseLimit: 10,
@@ -82,6 +85,9 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       setFundRequests(requests.filter(r => r.requesterId === user.id));
     });
     const unsubscribeFinances = db.subscribeFinances(setFinances);
+    const unsubscribeComplaints = db.subscribeComplaints((all) => {
+      setComplaints(all.filter(c => c.floor === user.floor));
+    });
 
     return () => {
       unsubscribeUnits();
@@ -89,6 +95,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       unsubscribeSettings();
       unsubscribeFundRequests();
       unsubscribeFinances();
+      unsubscribeComplaints();
     };
   }, [user.floor, user.id]);
 
@@ -203,6 +210,19 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
 
     await db.saveFinanceTransaction(transaction);
     alert("Setoran berhasil diajukan!");
+  };
+
+  const handleResolveComplaint = async (complaintId: string, response: string) => {
+    const complaint = complaints.find(c => c.id === complaintId);
+    if (!complaint) return;
+    
+    const updated: Complaint = {
+      ...complaint,
+      status: "RESOLVED",
+      response
+    };
+    await db.saveComplaint(updated);
+    setComplaintResponse(null);
   };
 
   const getMonthName = (monthIndex: number) => {
@@ -371,11 +391,11 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
             <p className="text-xs font-semibold text-gray-500">Lantai {user.floor}</p>
           </div>
-          <div className="flex p-1 bg-gray-200/50 rounded-xl w-full max-w-[320px] border border-gray-200/50">
+          <div className="flex p-1 bg-gray-200/50 rounded-xl w-full max-w-[400px] border border-gray-200/50 overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setActiveTab("INPUT")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-xs font-bold transition-all",
+                "flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap",
                 activeTab === "INPUT" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -384,7 +404,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
             <button 
               onClick={() => setActiveTab("HISTORY")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-xs font-bold transition-all",
+                "flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap",
                 activeTab === "HISTORY" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -393,7 +413,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
             <button 
               onClick={() => setActiveTab("DANA")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-xs font-bold transition-all",
+                "flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap",
                 activeTab === "DANA" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -402,11 +422,20 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
             <button 
               onClick={() => setActiveTab("SETORAN")}
               className={cn(
-                "flex-1 py-1.5 rounded-lg text-xs font-bold transition-all",
+                "flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap",
                 activeTab === "SETORAN" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
               Setoran
+            </button>
+            <button 
+              onClick={() => setActiveTab("KELUHAN")}
+              className={cn(
+                "flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap",
+                activeTab === "KELUHAN" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Keluhan
             </button>
           </div>
         </div>
@@ -832,7 +861,83 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
         </div>
       )}
 
-      {/* Add Fund Request Modal */}
+      {activeTab === "KELUHAN" && (
+        <div className="mt-4 space-y-6">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-900 leading-tight">Keluhan Warga</h2>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Lantai {user.floor}</p>
+          </div>
+
+          <div className="space-y-4">
+            {complaints.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <MessageSquare className="text-gray-300" size={24} />
+                </div>
+                <p className="text-gray-500 font-medium">Belum ada keluhan di lantai ini</p>
+              </div>
+            ) : (
+              complaints.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(c => {
+                const unit = units.find(u => u.id === c.unitId);
+                return (
+                  <motion.div 
+                    key={c.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center font-bold text-xs">
+                          {unit?.block}{unit?.unitNumber}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-gray-900">{c.title}</h4>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">{c.residentName} • {new Date(c.createdAt).toLocaleDateString("id-ID")}</p>
+                        </div>
+                      </div>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[8px] font-bold uppercase",
+                        c.status === "RESOLVED" ? "bg-green-100 text-green-700" :
+                        c.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
+                        "bg-amber-100 text-amber-700"
+                      )}>
+                        {c.status === "PENDING" ? "MENUNGGU" :
+                         c.status === "IN_PROGRESS" ? "DIPROSES" : "SELESAI"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-xl italic">"{c.description}"</p>
+                    
+                    {c.response ? (
+                      <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                        <p className="text-[10px] font-bold text-blue-600 uppercase mb-1">Respon:</p>
+                        <p className="text-sm text-gray-700">{c.response}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <textarea 
+                          placeholder="Tulis respon atau tindakan..."
+                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                          rows={2}
+                          value={complaintResponse?.id === c.id ? complaintResponse.text : ""}
+                          onChange={(e) => setComplaintResponse({ id: c.id, text: e.target.value })}
+                        />
+                        <button 
+                          onClick={() => handleResolveComplaint(c.id, complaintResponse?.text || "Keluhan telah ditindaklanjuti.")}
+                          className="w-full bg-purple-600 text-white py-2 rounded-xl font-bold text-xs hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Check size={16} />
+                          Tandai Selesai
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {showAddRequest && (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/50 backdrop-blur-sm">
