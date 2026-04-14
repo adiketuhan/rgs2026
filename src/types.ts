@@ -101,6 +101,7 @@ export type ComplaintStatus = "PENDING" | "IN_PROGRESS" | "RESOLVED";
 export interface Complaint {
   id: string;
   unitId: string;
+  floor: number;
   residentName: string;
   title: string;
   description: string;
