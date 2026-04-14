@@ -42,7 +42,10 @@ export const db = {
         .from(TABLES.SETTINGS)
         .upsert({ id: "global", ...settings });
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error updating settings:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error updating settings:", error);
     }
@@ -68,7 +71,10 @@ export const db = {
         .from(TABLES.USERS)
         .upsert(user);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving user:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving user:", error);
     }
@@ -107,7 +113,10 @@ export const db = {
         .from(TABLES.UNITS)
         .upsert(unit);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving unit:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving unit:", error);
     }
@@ -155,7 +164,10 @@ export const db = {
         .from(TABLES.BILLINGS)
         .upsert(billing);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving billing:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving billing:", error);
     }
@@ -181,7 +193,10 @@ export const db = {
         .from(TABLES.FINANCES)
         .upsert(transaction);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving finance transaction:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving finance transaction:", error);
     }
@@ -237,7 +252,10 @@ export const db = {
         .from(TABLES.FUND_REQUESTS)
         .upsert(request);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving fund request:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving fund request:", error);
     }
@@ -292,7 +310,10 @@ export const db = {
         .from(TABLES.COMPLAINTS)
         .upsert(complaint);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error saving complaint:", error.message, error.details, error.hint);
+        throw error;
+      }
     } catch (error) {
       console.error("Error saving complaint:", error);
     }
