@@ -119,6 +119,7 @@ export const db = {
       }
     } catch (error) {
       console.error("Error saving unit:", error);
+      throw error;
     }
   },
 
@@ -170,6 +171,7 @@ export const db = {
       }
     } catch (error) {
       console.error("Error saving billing:", error);
+      throw error;
     }
   },
 
@@ -199,6 +201,7 @@ export const db = {
       }
     } catch (error) {
       console.error("Error saving finance transaction:", error);
+      throw error;
     }
   },
 
@@ -258,6 +261,7 @@ export const db = {
       }
     } catch (error) {
       console.error("Error saving fund request:", error);
+      throw error;
     }
   },
 
@@ -316,6 +320,7 @@ export const db = {
       }
     } catch (error) {
       console.error("Error saving complaint:", error);
+      throw error;
     }
   },
 

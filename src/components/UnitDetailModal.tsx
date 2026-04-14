@@ -111,14 +111,19 @@ export function UnitDetailModal({ unit, user, onClose }: UnitDetailModalProps) {
   const toggleStatus = async (billing: Billing, type: 'WATER' | 'HOUSING') => {
     if (user.role !== 'ADMIN' && user.role !== 'PENGELOLA') return;
 
-    const updated: Billing = {
-      ...billing,
-      status: type === 'WATER' ? (billing.status === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.status,
-      housingPaymentStatus: type === 'HOUSING' ? (billing.housingPaymentStatus === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.housingPaymentStatus,
-      updatedAt: new Date().toISOString(),
-      updatedBy: user.id
-    };
-    await db.saveBilling(updated);
+    try {
+      const updated: Billing = {
+        ...billing,
+        status: type === 'WATER' ? (billing.status === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.status,
+        housingPaymentStatus: type === 'HOUSING' ? (billing.housingPaymentStatus === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.housingPaymentStatus,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.id
+      };
+      await db.saveBilling(updated);
+    } catch (err) {
+      console.error("Error toggling status:", err);
+      alert("Gagal merubah status. Pastikan database sudah diupdate dengan SQL yang diberikan.");
+    }
   };
 
   return (

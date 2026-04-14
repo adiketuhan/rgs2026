@@ -667,52 +667,61 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   };
 
   const toggleHousingStatus = async (unitId: string) => {
-    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-    
-    if (existingBilling) {
-      const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
-      const updated: Billing = {
-        ...existingBilling,
-        housingPaymentStatus: newStatus as any,
-        housingUpdatedAt: new Date().toISOString(),
-        housingUpdatedBy: user.id
-      };
-      await db.saveBilling(updated);
-    } else {
-      // Create a skeleton billing record if it doesn't exist
-      const unit = units.find(u => u.id === unitId);
-      if (!unit) return;
-
-      const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
-      const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
-      const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
       
-      const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
-      const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-      const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
-      const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+      if (existingBilling) {
+        const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
+        const updated: Billing = {
+          ...existingBilling,
+          housingPaymentStatus: newStatus as any,
+          housingUpdatedAt: new Date().toISOString(),
+          housingUpdatedBy: user.id
+        };
+        await db.saveBilling(updated);
+      } else {
+        // Create a skeleton billing record if it doesn't exist
+        const unit = units.find(u => u.id === unitId);
+        if (!unit) return;
 
-      const newBilling: Billing = {
-        id: Math.random().toString(36).substr(2, 9),
-        unitId,
-        month: selectedMonth,
-        year: selectedYear,
-        meterPrev,
-        meterCurrent: meterPrev, // No usage yet
-        usage: 0,
-        waterBill: 0,
-        trashBill: 0,
-        debtPrev,
-        totalBill: debtPrev,
-        status: "BELUM_LUNAS",
-        housingPaymentStatus: "BELUM_LUNAS", // Default to unpaid if toggled from non-existent
-        isVacant: unit.isVacant,
-        updatedAt: new Date().toISOString(),
-        updatedBy: user.id,
-        housingUpdatedAt: new Date().toISOString(),
-        housingUpdatedBy: user.id
-      };
-      await db.saveBilling(newBilling);
+        const allUnitBillings = billings.filter(b => b.unitId === unitId).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+        const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
+        const meterPrev = prevBill ? prevBill.meterCurrent : unit.initialMeter;
+        
+        const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        const lastMonthBilling = billings.find(b => b.unitId === unitId && b.month === lastMonth && b.year === lastYear);
+        const debtPrev = lastMonthBilling && lastMonthBilling.status === "BELUM_LUNAS" ? lastMonthBilling.totalBill : 0;
+
+        const newBilling: Billing = {
+          id: Math.random().toString(36).substr(2, 9),
+          unitId,
+          month: selectedMonth,
+          year: selectedYear,
+          meterPrev,
+          meterCurrent: meterPrev, // No usage yet
+          usage: 0,
+          waterBill: 0,
+          trashBill: 0,
+          debtPrev,
+          totalBill: debtPrev,
+          status: "BELUM_LUNAS",
+          housingPaymentStatus: "BELUM_LUNAS", // Default to unpaid if toggled from non-existent
+          isVacant: unit.isVacant,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.id,
+          housingUpdatedAt: new Date().toISOString(),
+          housingUpdatedBy: user.id
+        };
+        await db.saveBilling(newBilling);
+      }
+    } catch (err) {
+      console.error("Error toggling housing status:", err);
+      alert("Gagal merubah status hunian. Pastikan database sudah diupdate dengan SQL yang diberikan.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1102,13 +1111,19 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                     <button
                       key={unit.id}
                       onClick={() => toggleHousingStatus(unit.id)}
+                      disabled={isSaving}
                       className={cn(
                         "p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 text-center relative overflow-hidden",
-                        isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+                        isPaid ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700",
+                        isSaving && "opacity-50 cursor-not-allowed"
                       )}
                     >
                       <div className="absolute top-1 right-1">
-                        {isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                        {isSaving ? (
+                          <RefreshCw size={14} className="animate-spin text-blue-500" />
+                        ) : (
+                          isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />
+                        )}
                       </div>
                       <span className="text-lg font-black">{unit.block}{unit.unitNumber}</span>
                       <span className="text-[10px] font-bold uppercase opacity-70 truncate w-full px-1">{unit.residentName || "KOSONG"}</span>

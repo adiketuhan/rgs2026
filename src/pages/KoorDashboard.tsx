@@ -125,10 +125,16 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       }]
     };
 
-    await db.saveFundRequest(request);
-    setShowAddRequest(false);
-    setNewRequest({ title: '', description: '', amount: 0 });
-    setIsSubmitting(false);
+    try {
+      await db.saveFundRequest(request);
+      setShowAddRequest(false);
+      setNewRequest({ title: '', description: '', amount: 0 });
+    } catch (err) {
+      console.error("Error saving fund request:", err);
+      alert("Gagal mengajukan dana. Silakan coba lagi.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,10 +170,16 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       ]
     };
 
-    await db.saveFundRequest(updatedRequest);
-    setShowReportModal(null);
-    setReportData({ actualAmount: 0, receiptUrl: '' });
-    setIsSubmitting(false);
+    try {
+      await db.saveFundRequest(updatedRequest);
+      setShowReportModal(null);
+      setReportData({ actualAmount: 0, receiptUrl: '' });
+    } catch (err) {
+      console.error("Error submitting report:", err);
+      alert("Gagal mengirim laporan. Silakan coba lagi.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmitSetoran = async (category: "WATER" | "TRASH") => {
@@ -211,8 +223,13 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       year: selectedYear
     };
 
-    await db.saveFinanceTransaction(transaction);
-    alert("Setoran berhasil diajukan!");
+    try {
+      await db.saveFinanceTransaction(transaction);
+      alert("Setoran berhasil diajukan!");
+    } catch (err) {
+      console.error("Error submitting setoran:", err);
+      alert("Gagal mengajukan setoran. Silakan coba lagi.");
+    }
   };
 
   const handleResolveComplaint = async (complaintId: string, response: string) => {
@@ -224,8 +241,13 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
       status: "RESOLVED",
       response
     };
-    await db.saveComplaint(updated);
-    setComplaintResponse(null);
+    try {
+      await db.saveComplaint(updated);
+      setComplaintResponse(null);
+    } catch (err) {
+      console.error("Error resolving complaint:", err);
+      alert("Gagal memproses keluhan. Silakan coba lagi.");
+    }
   };
 
   const getMonthName = (monthIndex: number) => {

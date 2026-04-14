@@ -204,6 +204,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
       }
     } catch (err) {
       console.error("Error toggling housing status:", err);
+      alert("Gagal merubah status hunian. Pastikan database sudah diupdate dengan SQL yang diberikan.");
     } finally {
       setIsSaving(false);
     }
@@ -391,7 +392,11 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                     )}
                   >
                     <div className="absolute top-1 right-1">
-                      {isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                      {isSaving ? (
+                        <RefreshCw size={14} className="animate-spin text-blue-500" />
+                      ) : (
+                        isPaid ? <CheckCircle2 size={14} /> : <XCircle size={14} />
+                      )}
                     </div>
                     <span className="text-lg font-black">{unit.block}{unit.unitNumber}</span>
                     <span className="text-[10px] font-bold uppercase opacity-70 truncate w-full px-1">{unit.residentName || "KOSONG"}</span>
