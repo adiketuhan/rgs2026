@@ -766,6 +766,10 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     }
   };
 
+  const getMonthName = (monthIndex: number) => {
+    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
+  };
+
   const getOverdueMonths = (unitId: string) => {
     return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
   };
@@ -788,10 +792,6 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .map(b => `${getMonthName(b.month)} ${b.year}`)
       .join(", ");
-  };
-
-  const getMonthName = (monthIndex: number) => {
-    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const filteredUnitsForBilling = units
