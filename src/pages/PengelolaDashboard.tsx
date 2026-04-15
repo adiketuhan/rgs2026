@@ -83,23 +83,51 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
   };
 
+  const getOverdueMonthsDetail = (unitId: string) => {
+    return billings
+      .filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS")
+      .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+      .map(b => `${getMonthName(b.month)} ${b.year}`)
+      .join(", ");
+  };
+
   const getHousingOverdueMonths = (unitId: string) => {
     return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
   };
 
+  const getHousingOverdueMonthsDetail = (unitId: string) => {
+    return billings
+      .filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS")
+      .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+      .map(b => `${getMonthName(b.month)} ${b.year}`)
+      .join(", ");
+  };
+
   const lastMonthBillings = billings.filter(b => b.month === lastMonth && b.year === lastYear);
 
-  const overdueList = lastMonthBillings
-    .filter(b => b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")
-    .map(b => {
-      const unit = units.find(u => u.id === b.unitId);
+  const overdueList = units
+    .map(unit => {
+      const waterOverdueCount = getOverdueMonths(unit.id);
+      const housingOverdueCount = getHousingOverdueMonths(unit.id);
+      
+      if (waterOverdueCount === 0 && housingOverdueCount === 0) return null;
+
+      // Get the latest billing to show total bill and electricity status
+      const latestBilling = billings
+        .filter(b => b.unitId === unit.id)
+        .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))[0];
+
       return {
-        ...b,
+        ...latestBilling,
         unit,
-        waterOverdueCount: getOverdueMonths(b.unitId),
-        housingOverdueCount: getHousingOverdueMonths(b.unitId)
+        waterOverdueCount,
+        waterOverdueDetail: getOverdueMonthsDetail(unit.id),
+        housingOverdueCount,
+        housingOverdueDetail: getHousingOverdueMonthsDetail(unit.id),
+        totalBill: latestBilling?.totalBill || 0
       };
     })
+    .filter((item): item is any => item !== null)
     .filter(item => 
       (selectedFloor === "ALL" || item.unit?.floor === selectedFloor) &&
       (item.unit?.unitNumber.includes(searchTerm) || item.unit?.residentName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -148,7 +176,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     if (isSaving) return;
     
     const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : true;
+    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : false;
     const newStatus = isCurrentlyPaid ? "BELUM_LUNAS" : "LUNAS";
 
     setIsSaving(true);
@@ -434,18 +462,15 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {units.filter(unit => {
+              {filteredUnits.filter(unit => {
                 const billing = getUnitBilling(unit.id);
-                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true;
+                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : false;
                 if (paymentStatusFilter === "LUNAS") return isPaid;
                 if (paymentStatusFilter === "BELUM") return !isPaid;
                 return true;
-              }).sort((a, b) => {
-                if (a.floor !== b.floor) return a.floor - b.floor;
-                return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
               }).map(unit => {
                 const billing = getUnitBilling(unit.id);
-                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true;
+                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : false;
 
                 return (
                   <button
@@ -664,6 +689,20 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                           <p className="text-sm font-bold text-gray-900">
                             Air: {item.waterOverdueCount} bln | Hunian: {item.housingOverdueCount} bln
                           </p>
+                          {(item.waterOverdueCount > 0 || item.housingOverdueCount > 0) && (
+                            <div className="mt-1 space-y-1">
+                              {item.waterOverdueCount > 0 && (
+                                <p className="text-[10px] text-red-600 leading-tight">
+                                  <span className="font-bold">Bulan Air:</span> {item.waterOverdueDetail}
+                                </p>
+                              )}
+                              {item.housingOverdueCount > 0 && (
+                                <p className="text-[10px] text-red-600 leading-tight">
+                                  <span className="font-bold">Bulan Hunian:</span> {item.housingOverdueDetail}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

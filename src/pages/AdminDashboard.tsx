@@ -51,6 +51,8 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFloor, setSelectedFloor] = useState<number | "ALL">("ALL");
+  const [billingStatusFilter, setBillingStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
+  const [housingStatusFilter, setHousingStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
 
   // Meter Input States
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -672,7 +674,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     if (isSaving) return;
     
     const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : true;
+    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : false;
     const newStatus = isCurrentlyPaid ? "BELUM_LUNAS" : "LUNAS";
 
     setIsSaving(true);
@@ -764,15 +766,49 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     }
   };
 
+  const getOverdueMonths = (unitId: string) => {
+    return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
+  };
+
+  const getOverdueMonthsDetail = (unitId: string) => {
+    return billings
+      .filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS")
+      .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+      .map(b => `${getMonthName(b.month)} ${b.year}`)
+      .join(", ");
+  };
+
+  const getHousingOverdueMonths = (unitId: string) => {
+    return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
+  };
+
+  const getHousingOverdueMonthsDetail = (unitId: string) => {
+    return billings
+      .filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS")
+      .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+      .map(b => `${getMonthName(b.month)} ${b.year}`)
+      .join(", ");
+  };
+
   const getMonthName = (monthIndex: number) => {
     return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const filteredUnitsForBilling = units
-    .filter(u => 
-      (selectedFloor === "ALL" || u.floor === selectedFloor) &&
-      (u.unitNumber.includes(searchTerm) || u.residentName.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
+    .filter(u => {
+      const billing = getUnitBilling(u.id);
+      const matchesFloor = selectedFloor === "ALL" || u.floor === selectedFloor;
+      const matchesSearch = u.unitNumber.includes(searchTerm) || u.residentName.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      let matchesStatus = true;
+      if (billingStatusFilter === "LUNAS") {
+        matchesStatus = billing?.status === "LUNAS";
+      } else if (billingStatusFilter === "BELUM") {
+        matchesStatus = !billing || billing.status === "BELUM_LUNAS";
+      }
+
+      return matchesFloor && matchesSearch && matchesStatus;
+    })
     .sort((a, b) => {
       if (a.floor !== b.floor) return a.floor - b.floor;
       return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
@@ -1116,35 +1152,77 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                   </h2>
                   <p className="text-sm text-gray-500">Centang unit yang sudah bayar, uncheck yang belum bayar.</p>
                 </div>
-                <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
-                  <select 
-                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => (
-                      <option key={i} value={i}>{getMonthName(i)}</option>
-                    ))}
-                  </select>
-                  <select 
-                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  >
-                    {[2025, 2026, 2027].map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
+                <div className="flex flex-wrap gap-4 items-center">
+                  <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                    <button 
+                      onClick={() => setHousingStatusFilter("ALL")}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                        housingStatusFilter === "ALL" ? "bg-white text-blue-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      Semua
+                    </button>
+                    <button 
+                      onClick={() => setHousingStatusFilter("LUNAS")}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                        housingStatusFilter === "LUNAS" ? "bg-white text-green-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      Lunas
+                    </button>
+                    <button 
+                      onClick={() => setHousingStatusFilter("BELUM")}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                        housingStatusFilter === "BELUM" ? "bg-white text-red-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      Belum Bayar
+                    </button>
+                  </div>
+                  <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                    <select 
+                      className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <option key={i} value={i}>{getMonthName(i)}</option>
+                      ))}
+                    </select>
+                    <select 
+                      className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    >
+                      {[2025, 2026, 2027].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {units.sort((a, b) => {
+                {units.filter(u => {
+                  const matchesFloor = selectedFloor === "ALL" || u.floor === selectedFloor;
+                  const matchesSearch = u.unitNumber.includes(searchTerm) || u.residentName.toLowerCase().includes(searchTerm.toLowerCase());
+                  const billing = getUnitBilling(u.id);
+                  const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : false;
+                  
+                  let matchesStatus = true;
+                  if (housingStatusFilter === "LUNAS") matchesStatus = isPaid;
+                  else if (housingStatusFilter === "BELUM") matchesStatus = !isPaid;
+
+                  return matchesFloor && matchesSearch && matchesStatus;
+                }).sort((a, b) => {
                   if (a.floor !== b.floor) return a.floor - b.floor;
                   return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
                 }).map(unit => {
                   const billing = getUnitBilling(unit.id);
-                  const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true; // Default to true (checked)
+                  const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : false;
 
                   return (
                     <button
@@ -1233,20 +1311,40 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
           <div className="bg-red-50 p-6 rounded-2xl border border-red-100 mb-8">
             <h3 className="text-lg font-bold text-red-800 mb-4 flex items-center gap-2">
               <AlertCircle className="text-red-600" />
-              Peringatan Tunggakan (PDAM & Hunian)
+              Daftar Penunggak (PDAM & Hunian)
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {billings
-                .filter(b => b.month === selectedMonth && b.year === selectedYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS"))
-                .map(b => {
-                  const unit = units.find(u => u.id === b.unitId);
-                  if (!unit) return null;
+              {units
+                .map(unit => {
+                  const waterOverdueCount = getOverdueMonths(unit.id);
+                  const housingOverdueCount = getHousingOverdueMonths(unit.id);
                   
-                  const isWaterPaid = b.status === "LUNAS";
-                  const isHousingPaid = b.housingPaymentStatus !== "BELUM_LUNAS";
+                  if (waterOverdueCount === 0 && housingOverdueCount === 0) return null;
+
+                  const latestBilling = billings
+                    .filter(b => b.unitId === unit.id)
+                    .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))[0];
+
+                  return {
+                    ...latestBilling,
+                    unit,
+                    waterOverdueCount,
+                    waterOverdueDetail: getOverdueMonthsDetail(unit.id),
+                    housingOverdueCount,
+                    housingOverdueDetail: getHousingOverdueMonthsDetail(unit.id),
+                    totalBill: latestBilling?.totalBill || 0
+                  };
+                })
+                .filter((item): item is any => item !== null)
+                .map(item => {
+                  const unit = item.unit;
+                  const isWaterPaid = item.status === "LUNAS";
+                  const isHousingPaid = item.housingPaymentStatus !== "BELUM_LUNAS";
+                  const waterOverdueDetail = getOverdueMonthsDetail(item.unitId);
+                  const housingOverdueDetail = getHousingOverdueMonthsDetail(item.unitId);
 
                   return (
-                    <div key={b.id} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
+                    <div key={item.id} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <p className="font-black text-gray-900">{unit.block}{unit.unitNumber}</p>
@@ -1273,19 +1371,36 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                           </div>
                         </div>
                       </div>
+                      
+                      <div className="mb-3 space-y-1 bg-red-50/50 p-2 rounded-lg border border-red-100">
+                        {getOverdueMonths(item.unitId) > 0 && (
+                          <p className="text-[9px] text-red-700 leading-tight">
+                            <span className="font-bold">Bulan Air:</span> {waterOverdueDetail}
+                          </p>
+                        )}
+                        {getHousingOverdueMonths(item.unitId) > 0 && (
+                          <p className="text-[9px] text-red-700 leading-tight">
+                            <span className="font-bold">Bulan Hunian:</span> {housingOverdueDetail}
+                          </p>
+                        )}
+                      </div>
+
                       <div className="flex justify-between items-center">
-                        <p className="text-xs text-red-600 font-bold">Total: {formatCurrency(b.totalBill)}</p>
-                        {b.isElectricityCut ? (
-                          <span className="text-[8px] font-bold bg-gray-900 text-white px-2 py-1 rounded-full uppercase flex items-center gap-1">
+                        <p className="text-xs text-red-600 font-bold">Total: {formatCurrency(item.totalBill)}</p>
+                        {item.isElectricityCut ? (
+                          <button 
+                            onClick={() => toggleElectricity(item)}
+                            className="text-[8px] font-bold bg-gray-900 text-white px-2 py-1 rounded-full uppercase flex items-center gap-1 hover:bg-gray-800 transition-colors"
+                          >
                             <ZapOff size={8} /> Listrik Putus
-                          </span>
+                          </button>
                         ) : (
                           (new Date().getDate() > 10 && (!isWaterPaid || !isHousingPaid)) && (
                             <button 
-                              onClick={() => toggleElectricity(b)}
-                              className="text-[8px] font-bold bg-red-600 text-white px-2 py-1 rounded-full uppercase hover:bg-red-700 transition-colors"
+                              onClick={() => toggleElectricity(item)}
+                              className="text-[8px] font-bold bg-red-600 text-white px-2 py-1 rounded-full uppercase hover:bg-red-700 transition-colors flex items-center gap-1"
                             >
-                              Putus Listrik
+                              <Zap size={8} /> Putus Listrik
                             </button>
                           )
                         )}
@@ -1294,8 +1409,8 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                   );
                 })}
             </div>
-            {billings.filter(b => b.month === selectedMonth && b.year === selectedYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")).length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">Tidak ada tunggakan bulan ini.</p>
+            {units.filter(u => getOverdueMonths(u.id) > 0 || getHousingOverdueMonths(u.id) > 0).length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-4">Tidak ada tunggakan saat ini.</p>
             )}
           </div>
         )}
@@ -1926,6 +2041,35 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+              </div>
+              <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                <button 
+                  onClick={() => setBillingStatusFilter("ALL")}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                    billingStatusFilter === "ALL" ? "bg-white text-blue-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                  )}
+                >
+                  Semua Status
+                </button>
+                <button 
+                  onClick={() => setBillingStatusFilter("LUNAS")}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                    billingStatusFilter === "LUNAS" ? "bg-white text-green-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                  )}
+                >
+                  Lunas
+                </button>
+                <button 
+                  onClick={() => setBillingStatusFilter("BELUM")}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                    billingStatusFilter === "BELUM" ? "bg-white text-red-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                  )}
+                >
+                  Belum Lunas
+                </button>
               </div>
               <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
                 <button 
