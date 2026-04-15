@@ -28,7 +28,9 @@ import {
   AlertCircle,
   Eye,
   Edit3,
-  MessageSquare
+  MessageSquare,
+  Zap,
+  ZapOff
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
@@ -668,21 +670,26 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
 
   const toggleHousingStatus = async (unitId: string) => {
     if (isSaving) return;
+    
+    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
+    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : true;
+    const newStatus = isCurrentlyPaid ? "BELUM_LUNAS" : "LUNAS";
+
     setIsSaving(true);
     try {
-      const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-      
       if (existingBilling) {
-        const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
         const updated: Billing = {
           ...existingBilling,
-          housingPaymentStatus: newStatus as any,
+          housingPaymentStatus: newStatus,
           housingUpdatedAt: new Date().toISOString(),
           housingUpdatedBy: user.id
         };
+        
+        // Optimistic update
+        setBillings(prev => prev.map(b => b.id === updated.id ? updated : b));
+        
         await db.saveBilling(updated);
       } else {
-        // Create a skeleton billing record if it doesn't exist
         const unit = units.find(u => u.id === unitId);
         if (!unit) return;
 
@@ -701,25 +708,57 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
           month: selectedMonth,
           year: selectedYear,
           meterPrev,
-          meterCurrent: meterPrev, // No usage yet
+          meterCurrent: meterPrev,
           usage: 0,
           waterBill: 0,
           trashBill: 0,
           debtPrev,
           totalBill: debtPrev,
           status: "BELUM_LUNAS",
-          housingPaymentStatus: "BELUM_LUNAS", // Default to unpaid if toggled from non-existent
+          housingPaymentStatus: newStatus,
           isVacant: unit.isVacant,
           updatedAt: new Date().toISOString(),
           updatedBy: user.id,
           housingUpdatedAt: new Date().toISOString(),
           housingUpdatedBy: user.id
         };
+
+        // Optimistic update
+        setBillings(prev => [...prev, newBilling]);
+        
         await db.saveBilling(newBilling);
       }
     } catch (err) {
       console.error("Error toggling housing status:", err);
       alert("Gagal merubah status hunian. Pastikan database sudah diupdate dengan SQL yang diberikan.");
+      // Revert optimistic update by fetching fresh data
+      db.getBillings().then(setBillings);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleElectricity = async (billing: Billing) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const updated: Billing = {
+        ...billing,
+        isElectricityCut: !billing.isElectricityCut,
+        electricityCutAt: !billing.isElectricityCut ? new Date().toISOString() : billing.electricityCutAt,
+        electricityCutBy: !billing.isElectricityCut ? user.id : billing.electricityCutBy,
+        electricityRestoredAt: billing.isElectricityCut ? new Date().toISOString() : billing.electricityRestoredAt,
+        electricityRestoredBy: billing.isElectricityCut ? user.id : billing.electricityRestoredBy,
+      };
+      
+      // Optimistic update
+      setBillings(prev => prev.map(b => b.id === updated.id ? updated : b));
+      
+      await db.saveBilling(updated);
+    } catch (err) {
+      console.error("Error toggling electricity:", err);
+      alert("Gagal merubah status listrik.");
+      db.getBillings().then(setBillings);
     } finally {
       setIsSaving(false);
     }
@@ -1105,7 +1144,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                   return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
                 }).map(unit => {
                   const billing = getUnitBilling(unit.id);
-                  const isPaid = billing ? billing.housingPaymentStatus === "LUNAS" : true; // Default to true (checked)
+                  const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true; // Default to true (checked)
 
                   return (
                     <button
@@ -1202,23 +1241,55 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
                 .map(b => {
                   const unit = units.find(u => u.id === b.unitId);
                   if (!unit) return null;
+                  
+                  const isWaterPaid = b.status === "LUNAS";
+                  const isHousingPaid = b.housingPaymentStatus !== "BELUM_LUNAS";
+
                   return (
                     <div key={b.id} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start mb-3">
                         <div>
                           <p className="font-black text-gray-900">{unit.block}{unit.unitNumber}</p>
                           <p className="text-[10px] text-gray-400 font-bold uppercase">{unit.residentName}</p>
                         </div>
                         <div className="flex flex-col items-end gap-1">
-                          {b.status === "BELUM_LUNAS" && (
-                            <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">PDAM</span>
-                          )}
-                          {b.housingPaymentStatus === "BELUM_LUNAS" && (
-                            <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Hunian</span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">AIR:</span>
+                            <span className={cn(
+                              "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
+                              isWaterPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                            )}>
+                              {isWaterPaid ? "LUNAS" : "BELUM"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">HUNIAN:</span>
+                            <span className={cn(
+                              "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
+                              isHousingPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                            )}>
+                              {isHousingPaid ? "LUNAS" : "BELUM"}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-xs text-red-600 font-bold">Total: {formatCurrency(b.totalBill)}</p>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-red-600 font-bold">Total: {formatCurrency(b.totalBill)}</p>
+                        {b.isElectricityCut ? (
+                          <span className="text-[8px] font-bold bg-gray-900 text-white px-2 py-1 rounded-full uppercase flex items-center gap-1">
+                            <ZapOff size={8} /> Listrik Putus
+                          </span>
+                        ) : (
+                          (new Date().getDate() > 10 && (!isWaterPaid || !isHousingPaid)) && (
+                            <button 
+                              onClick={() => toggleElectricity(b)}
+                              className="text-[8px] font-bold bg-red-600 text-white px-2 py-1 rounded-full uppercase hover:bg-red-700 transition-colors"
+                            >
+                              Putus Listrik
+                            </button>
+                          )
+                        )}
+                      </div>
                     </div>
                   );
                 })}

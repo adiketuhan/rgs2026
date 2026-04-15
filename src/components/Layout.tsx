@@ -35,6 +35,7 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
       case "KOORDINATOR": return `Koordinator Lt ${user.floor}`;
       case "BENDAHARA": return "Bendahara";
       case "PENGELOLA": return "Pengelola";
+      case "SECURITY": return "Security / Petugas";
       case "WARGA": return "Warga";
       default: return "";
     }
@@ -213,6 +214,17 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
                 icon={<AlertCircle size={20} />} 
                 label="Daftar Penunggak" 
                 active={activeTab === "penunggak"} 
+                onClick={() => handleTabClick("penunggak")}
+              />
+            </>
+          )}
+
+          {user.role === "SECURITY" && (
+            <>
+              <SidebarLink 
+                icon={<AlertCircle size={20} />} 
+                label="Daftar Penunggak" 
+                active={activeTab === "penunggak" || !activeTab} 
                 onClick={() => handleTabClick("penunggak")}
               />
             </>

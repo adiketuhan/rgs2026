@@ -112,10 +112,13 @@ export function UnitDetailModal({ unit, user, onClose }: UnitDetailModalProps) {
     if (user.role !== 'ADMIN' && user.role !== 'PENGELOLA') return;
 
     try {
+      const isWaterPaid = billing.status === 'LUNAS';
+      const isHousingPaid = billing.housingPaymentStatus !== 'BELUM_LUNAS';
+
       const updated: Billing = {
         ...billing,
-        status: type === 'WATER' ? (billing.status === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.status,
-        housingPaymentStatus: type === 'HOUSING' ? (billing.housingPaymentStatus === 'LUNAS' ? 'BELUM_LUNAS' : 'LUNAS') : billing.housingPaymentStatus,
+        status: type === 'WATER' ? (isWaterPaid ? 'BELUM_LUNAS' : 'LUNAS') : billing.status,
+        housingPaymentStatus: type === 'HOUSING' ? (isHousingPaid ? 'BELUM_LUNAS' : 'LUNAS') : billing.housingPaymentStatus,
         updatedAt: new Date().toISOString(),
         updatedBy: user.id
       };

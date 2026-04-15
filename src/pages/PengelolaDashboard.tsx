@@ -22,7 +22,9 @@ import {
   Home, 
   Check, 
   Eye,
-  LayoutDashboard
+  LayoutDashboard,
+  Zap,
+  ZapOff
 } from "lucide-react";
 import { formatCurrency, cn } from "../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -84,29 +86,15 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
 
   const currentMonthBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear);
 
-  const waterOverdueList = currentMonthBillings
-    .filter(b => b.status === "BELUM_LUNAS")
+  const overdueList = currentMonthBillings
+    .filter(b => b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")
     .map(b => {
       const unit = units.find(u => u.id === b.unitId);
       return {
         ...b,
         unit,
-        overdueCount: getOverdueMonths(b.unitId)
-      };
-    })
-    .filter(item => 
-      (selectedFloor === "ALL" || item.unit?.floor === selectedFloor) &&
-      (item.unit?.unitNumber.includes(searchTerm) || item.unit?.residentName.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-
-  const housingOverdueList = currentMonthBillings
-    .filter(b => b.housingPaymentStatus === "BELUM_LUNAS")
-    .map(b => {
-      const unit = units.find(u => u.id === b.unitId);
-      return {
-        ...b,
-        unit,
-        overdueCount: getHousingOverdueMonths(b.unitId)
+        waterOverdueCount: getOverdueMonths(b.unitId),
+        housingOverdueCount: getHousingOverdueMonths(b.unitId)
       };
     })
     .filter(item => 
@@ -115,7 +103,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     );
 
   const exportToExcel = () => {
-    const data = [...waterOverdueList, ...housingOverdueList].map(item => ({
+    const data = overdueList.map(item => ({
       "Unit": `${item.unit?.block}${item.unit?.unitNumber}`,
       "Lantai": item.unit?.floor,
       "Nama Penghuni": item.unit?.residentName,
@@ -124,9 +112,10 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
       "Tagihan Air": item.waterBill + item.trashBill,
       "Tunggakan Air": item.status === "BELUM_LUNAS" ? "YA" : "TIDAK",
       "Tunggakan Hunian": item.housingPaymentStatus === "BELUM_LUNAS" ? "YA" : "TIDAK",
-      "Bulan Menunggak Air": getOverdueMonths(item.unitId),
-      "Bulan Menunggak Hunian": getHousingOverdueMonths(item.unitId),
-      "Total Tagihan": item.totalBill
+      "Bulan Menunggak Air": item.waterOverdueCount,
+      "Bulan Menunggak Hunian": item.housingOverdueCount,
+      "Total Tagihan": item.totalBill,
+      "Status Listrik": item.isElectricityCut ? "PUTUS" : "AKTIF"
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -154,18 +143,24 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
 
   const toggleHousingStatus = async (unitId: string) => {
     if (isSaving) return;
+    
+    const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
+    const isCurrentlyPaid = existingBilling ? (existingBilling.housingPaymentStatus !== "BELUM_LUNAS") : true;
+    const newStatus = isCurrentlyPaid ? "BELUM_LUNAS" : "LUNAS";
+
     setIsSaving(true);
     try {
-      const existingBilling = billings.find(b => b.unitId === unitId && b.month === selectedMonth && b.year === selectedYear);
-      
       if (existingBilling) {
-        const newStatus = existingBilling.housingPaymentStatus === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
         const updated: Billing = {
           ...existingBilling,
-          housingPaymentStatus: newStatus as any,
+          housingPaymentStatus: newStatus,
           housingUpdatedAt: new Date().toISOString(),
           housingUpdatedBy: user.id
         };
+        
+        // Optimistic update
+        setBillings(prev => prev.map(b => b.id === updated.id ? updated : b));
+        
         await db.saveBilling(updated);
       } else {
         const unit = units.find(u => u.id === unitId);
@@ -193,18 +188,50 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
           debtPrev,
           totalBill: debtPrev,
           status: "BELUM_LUNAS",
-          housingPaymentStatus: "BELUM_LUNAS",
+          housingPaymentStatus: newStatus,
           isVacant: unit.isVacant,
           updatedAt: new Date().toISOString(),
           updatedBy: user.id,
           housingUpdatedAt: new Date().toISOString(),
           housingUpdatedBy: user.id
         };
+
+        // Optimistic update
+        setBillings(prev => [...prev, newBilling]);
+        
         await db.saveBilling(newBilling);
       }
     } catch (err) {
       console.error("Error toggling housing status:", err);
       alert("Gagal merubah status hunian. Pastikan database sudah diupdate dengan SQL yang diberikan.");
+      // Revert optimistic update
+      db.getBillings().then(setBillings);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleElectricity = async (billing: Billing) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const updated: Billing = {
+        ...billing,
+        isElectricityCut: !billing.isElectricityCut,
+        electricityCutAt: !billing.isElectricityCut ? new Date().toISOString() : billing.electricityCutAt,
+        electricityCutBy: !billing.isElectricityCut ? user.id : billing.electricityCutBy,
+        electricityRestoredAt: billing.isElectricityCut ? new Date().toISOString() : billing.electricityRestoredAt,
+        electricityRestoredBy: billing.isElectricityCut ? user.id : billing.electricityRestoredBy,
+      };
+      
+      // Optimistic update
+      setBillings(prev => prev.map(b => b.id === updated.id ? updated : b));
+      
+      await db.saveBilling(updated);
+    } catch (err) {
+      console.error("Error toggling electricity:", err);
+      alert("Gagal merubah status listrik.");
+      db.getBillings().then(setBillings);
     } finally {
       setIsSaving(false);
     }
@@ -378,7 +405,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                 return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
               }).map(unit => {
                 const billing = getUnitBilling(unit.id);
-                const isPaid = billing ? billing.housingPaymentStatus === "LUNAS" : true;
+                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true;
 
                 return (
                   <button
@@ -540,28 +567,20 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
           )}
         </div>
       ) : activeTab === "penunggak" ? (
-        <div className="space-y-12">
-          {/* Penunggak Air Section */}
-          <section>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-blue-100 rounded-xl">
-                <Droplets className="text-blue-600" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Tunggakan Air & Sampah</h3>
-                <p className="text-sm text-gray-500">Daftar warga yang belum melunasi tagihan air bulan ini.</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {waterOverdueList.length > 0 ? waterOverdueList.map(item => (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {overdueList.length > 0 ? overdueList.map(item => {
+              const isWaterPaid = item.status === "LUNAS";
+              const isHousingPaid = item.housingPaymentStatus !== "BELUM_LUNAS";
+
+              return (
                 <motion.div 
                   key={item.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   className={cn(
                     "bg-white p-6 rounded-2xl shadow-sm border-2 transition-all relative overflow-hidden",
-                    isAfterDue ? "border-red-100" : "border-gray-50"
+                    (new Date().getDate() > 10 && (!isWaterPaid || !isHousingPaid)) ? "border-red-100" : "border-gray-50"
                   )}
                 >
                   <div className="flex justify-between items-start mb-4">
@@ -574,18 +593,38 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                       </button>
                       <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-red-600">{formatCurrency(item.totalBill)}</p>
-                      <span className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded uppercase">PDAM</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">AIR:</span>
+                        <span className={cn(
+                          "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
+                          isWaterPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        )}>
+                          {isWaterPaid ? "LUNAS" : "BELUM"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">HUNIAN:</span>
+                        <span className={cn(
+                          "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
+                          isHousingPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        )}>
+                          {isHousingPaid ? "LUNAS" : "BELUM"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-3 mb-6">
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <Clock className="text-orange-500" size={18} />
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold">Durasi Tunggakan</p>
-                        <p className="text-sm font-bold text-gray-900">{item.overdueCount} Bulan</p>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <Clock className="text-orange-500" size={18} />
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-bold">Tunggakan</p>
+                          <p className="text-sm font-bold text-gray-900">
+                            Air: {item.waterOverdueCount} bln | Hunian: {item.housingOverdueCount} bln
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
@@ -597,7 +636,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mb-3">
                     <button 
                       onClick={() => setDetailUnit(item.unit!)}
                       className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
@@ -612,90 +651,35 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                       <MessageSquare size={18} />
                     </button>
                   </div>
-                </motion.div>
-              )) : (
-                <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
-                  <p className="font-medium">Tidak ada tunggakan air</p>
-                </div>
-              )}
-            </div>
-          </section>
 
-          {/* Penunggak Hunian Section */}
-          <section>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-orange-100 rounded-xl">
-                <Home className="text-orange-600" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Tunggakan Iuran Hunian</h3>
-                <p className="text-sm text-gray-500">Daftar warga yang belum melunasi iuran hunian.</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {housingOverdueList.length > 0 ? housingOverdueList.map(item => (
-                <motion.div 
-                  key={item.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-50 transition-all relative overflow-hidden"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
+                  <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                    <p className="text-lg font-bold text-red-600">{formatCurrency(item.totalBill)}</p>
+                    {item.isElectricityCut ? (
                       <button 
-                        onClick={() => setDetailUnit(item.unit!)}
-                        className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
+                        onClick={() => toggleElectricity(item)}
+                        className="text-[10px] font-bold bg-gray-900 text-white px-3 py-1.5 rounded-full uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
                       >
-                        {item.unit?.block}{item.unit?.unitNumber}
+                        <ZapOff size={12} /> Listrik Putus
                       </button>
-                      <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[8px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase">Hunian</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 mb-6">
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <Clock className="text-orange-500" size={18} />
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold">Total Piutang</p>
-                        <p className="text-sm font-bold text-gray-900">{item.overdueCount} Bulan</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <UserX className="text-red-500" size={18} />
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase font-bold">Nama Penghuni</p>
-                        <p className="text-sm font-bold text-gray-900">{item.unit?.residentName}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setDetailUnit(item.unit!)}
-                      className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-all"
-                    >
-                      <Eye size={16} />
-                      Detail
-                    </button>
-                    <button 
-                      onClick={() => window.open(`https://wa.me/${item.unit?.phoneNumber.replace(/\D/g, '')}`, '_blank')}
-                      className="w-12 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all"
-                    >
-                      <MessageSquare size={18} />
-                    </button>
+                    ) : (
+                      (new Date().getDate() > 10 && (!isWaterPaid || !isHousingPaid)) && (
+                        <button 
+                          onClick={() => toggleElectricity(item)}
+                          className="text-[10px] font-bold bg-red-600 text-white px-3 py-1.5 rounded-full uppercase flex items-center gap-2 hover:bg-red-700 transition-colors"
+                        >
+                          <Zap size={12} /> Putus Listrik
+                        </button>
+                      )
+                    )}
                   </div>
                 </motion.div>
-              )) : (
-                <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
-                  <p className="font-medium">Tidak ada tunggakan hunian</p>
-                </div>
-              )}
-            </div>
-          </section>
+              );
+            }) : (
+              <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                <p className="font-medium">Tidak ada tunggakan bulan ini</p>
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
 

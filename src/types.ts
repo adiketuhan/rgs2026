@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "KOORDINATOR" | "BENDAHARA" | "PENGELOLA" | "WARGA";
+export type Role = "ADMIN" | "KOORDINATOR" | "BENDAHARA" | "PENGELOLA" | "WARGA" | "SECURITY";
 
 export interface User {
   id: string;
@@ -50,6 +50,11 @@ export interface Billing {
   updatedBy: string;
   housingUpdatedAt?: string;
   housingUpdatedBy?: string;
+  isElectricityCut?: boolean;
+  electricityCutAt?: string;
+  electricityCutBy?: string;
+  electricityRestoredAt?: string;
+  electricityRestoredBy?: string;
   notes?: string;
 }
 

@@ -75,6 +75,8 @@ export default function App() {
         setAdminTab("keuangan");
       } else if (userData.role === "PENGELOLA") {
         setAdminTab("dashboard");
+      } else if (userData.role === "SECURITY") {
+        setAdminTab("penunggak");
       }
       
       // Sync session to Supabase if needed
@@ -166,6 +168,7 @@ function DashboardRouter({ user, adminTab, onTabChange }: { user: User, adminTab
     case "BENDAHARA":
       return <BendaharaDashboard user={user} activeTab={adminTab} />;
     case "PENGELOLA":
+    case "SECURITY":
       return <PengelolaDashboard user={user} activeTab={adminTab} onTabChange={onTabChange} />;
     case "WARGA":
       return <WargaDashboard user={user} />;
