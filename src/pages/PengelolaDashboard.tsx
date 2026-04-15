@@ -50,6 +50,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFloor, setSelectedFloor] = useState<number | "ALL">("ALL");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
   
   // States
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -60,6 +61,8 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
+  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
   const isAfterDue = new Date().getDate() > settings.dueDay;
 
   useEffect(() => {
@@ -84,9 +87,9 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
   };
 
-  const currentMonthBillings = billings.filter(b => b.month === currentMonth && b.year === currentYear);
+  const lastMonthBillings = billings.filter(b => b.month === lastMonth && b.year === lastYear);
 
-  const overdueList = currentMonthBillings
+  const overdueList = lastMonthBillings
     .filter(b => b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")
     .map(b => {
       const unit = units.find(u => u.id === b.unitId);
@@ -353,7 +356,7 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
             <div>
               <p className="text-sm font-bold text-red-800">Peringatan Tunggakan</p>
               <p className="text-xs text-red-600">
-                Ada {billings.filter(b => b.month === currentMonth && b.year === currentYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")).length} unit yang belum melunasi kewajiban bulan ini.
+                Ada {billings.filter(b => b.month === lastMonth && b.year === lastYear && (b.status === "BELUM_LUNAS" || b.housingPaymentStatus === "BELUM_LUNAS")).length} unit yang belum melunasi kewajiban bulan lalu.
               </p>
             </div>
           </div>
@@ -377,30 +380,67 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                 </h2>
                 <p className="text-sm text-gray-500">Centang unit yang sudah bayar, uncheck yang belum bayar.</p>
               </div>
-              <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
-                <select 
-                  className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                >
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i} value={i}>{getMonthName(i)}</option>
-                  ))}
-                </select>
-                <select 
-                  className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                >
-                  {[2025, 2026, 2027].map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap gap-4 items-center">
+                <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                  <button 
+                    onClick={() => setPaymentStatusFilter("ALL")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                      paymentStatusFilter === "ALL" ? "bg-white text-blue-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    Semua
+                  </button>
+                  <button 
+                    onClick={() => setPaymentStatusFilter("LUNAS")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                      paymentStatusFilter === "LUNAS" ? "bg-white text-green-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    Lunas
+                  </button>
+                  <button 
+                    onClick={() => setPaymentStatusFilter("BELUM")}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                      paymentStatusFilter === "BELUM" ? "bg-white text-red-600 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    Belum Bayar
+                  </button>
+                </div>
+                <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                  <select 
+                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i} value={i}>{getMonthName(i)}</option>
+                    ))}
+                  </select>
+                  <select 
+                    className="bg-transparent text-sm font-bold text-gray-700 outline-none px-2"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  >
+                    {[2025, 2026, 2027].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {units.sort((a, b) => {
+              {units.filter(unit => {
+                const billing = getUnitBilling(unit.id);
+                const isPaid = billing ? (billing.housingPaymentStatus !== "BELUM_LUNAS") : true;
+                if (paymentStatusFilter === "LUNAS") return isPaid;
+                if (paymentStatusFilter === "BELUM") return !isPaid;
+                return true;
+              }).sort((a, b) => {
                 if (a.floor !== b.floor) return a.floor - b.floor;
                 return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
               }).map(unit => {
@@ -593,23 +633,23 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
                       </button>
                       <p className="text-sm text-gray-500">Lantai {item.unit?.floor}</p>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">AIR:</span>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-gray-500 uppercase">AIR:</span>
                         <span className={cn(
-                          "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
-                          isWaterPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          "text-xs font-black px-3 py-1 rounded-lg uppercase shadow-sm",
+                          isWaterPaid ? "bg-green-100 text-green-700 border border-green-200" : "bg-red-100 text-red-700 border border-red-200"
                         )}>
-                          {isWaterPaid ? "LUNAS" : "BELUM"}
+                          {isWaterPaid ? "LUNAS" : "BELUM BAYAR"}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[8px] font-bold text-gray-500 uppercase mr-1">HUNIAN:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-gray-500 uppercase">HUNIAN:</span>
                         <span className={cn(
-                          "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase",
-                          isHousingPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          "text-xs font-black px-3 py-1 rounded-lg uppercase shadow-sm",
+                          isHousingPaid ? "bg-green-100 text-green-700 border border-green-200" : "bg-red-100 text-red-700 border border-red-200"
                         )}>
-                          {isHousingPaid ? "LUNAS" : "BELUM"}
+                          {isHousingPaid ? "LUNAS" : "BELUM BAYAR"}
                         </span>
                       </div>
                     </div>
