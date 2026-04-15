@@ -79,6 +79,10 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     };
   }, []);
 
+  const getMonthName = (monthIndex: number) => {
+    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
+  };
+
   const getOverdueMonths = (unitId: string) => {
     return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
   };
@@ -266,10 +270,6 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const getMonthName = (monthIndex: number) => {
-    return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
   const filteredUnits = units
