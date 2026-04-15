@@ -114,3 +114,14 @@ export interface Complaint {
   createdAt: string;
   response?: string;
 }
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  userRole: Role;
+  action: string;
+  targetId: string;
+  details: string;
+}

@@ -135,6 +135,12 @@ export function Layout({ user, onLogout, children, activeTab, onTabChange }: Lay
                 active={activeTab === "pengaturan"} 
                 onClick={() => handleTabClick("pengaturan")}
               />
+              <SidebarLink 
+                icon={<HistoryIcon size={20} />} 
+                label="Audit Log" 
+                active={activeTab === "log"} 
+                onClick={() => handleTabClick("log")}
+              />
             </>
           )}
 

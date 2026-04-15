@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Unit, Billing, Settings, FundRequest, FundRequestStatus, FinanceTransaction, Complaint } from "../types";
+import { User, Unit, Billing, Settings, FundRequest, FundRequestStatus, FinanceTransaction, Complaint, AuditLog } from "../types";
 import { db } from "../db";
 import { 
   Droplets, 
@@ -64,6 +64,7 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
   const [isVacantInput, setIsVacantInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
+  const [isMobileMode, setIsMobileMode] = useState(false);
 
   const [fundRequests, setFundRequests] = useState<FundRequest[]>([]);
   const [showAddRequest, setShowAddRequest] = useState(false);
@@ -314,13 +315,20 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
     
     const meterCurrent = Number(meterInput);
     
+    // Validation
     if (meterCurrent < currentPrevMeter && !isVacantInput) {
       alert(`Meteran baru (${meterCurrent}) tidak boleh lebih kecil dari meteran sebelumnya (${currentPrevMeter})`);
       return;
     }
 
-    setIsSaving(true);
     const usage = Math.max(0, meterCurrent - currentPrevMeter);
+    if (usage > 100) {
+      if (!confirm(`Peringatan: Pemakaian air sangat tinggi (${usage} m³). Apakah Anda yakin data ini benar?`)) {
+        return;
+      }
+    }
+
+    setIsSaving(true);
     const { water, trash } = calculateBill(usage, isVacantInput);
     
     // Calculate debt from previous month relative to SELECTED month
@@ -357,11 +365,31 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
     }
 
     // Recalculate subsequent months to sync debt
-    const { updatedBillings, affectedBillings } = recalculateUnitBillings(selectedUnit.id, updatedBillingsList);
+    const { affectedBillings } = recalculateUnitBillings(selectedUnit.id, updatedBillingsList);
+
+    // Audit Log
+    const auditLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "INPUT_METER",
+      targetId: selectedUnit.id,
+      details: JSON.stringify({
+        unit: `${selectedUnit.block}${selectedUnit.unitNumber}`,
+        month: selectedMonth,
+        year: selectedYear,
+        meterPrev: currentPrevMeter,
+        meterCurrent,
+        usage
+      })
+    };
 
     // Save the new/updated billing and all affected subsequent billings
     const savePromises = [
       db.saveBilling(newBilling),
+      db.saveAuditLog(auditLog),
       ...affectedBillings.map(b => db.saveBilling(b))
     ];
     await Promise.all(savePromises);
@@ -376,15 +404,34 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
   const toggleStatus = async (billingId: string) => {
     const billing = billings.find(b => b.id === billingId);
     if (!billing) return;
-
+    const unit = units.find(u => u.id === billing.unitId);
     const newStatus = billing.status === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
     const updatedBilling = { ...billing, status: newStatus as any };
     
     let updatedBillingsList = billings.map(b => b.id === billingId ? updatedBilling : b);
     const { affectedBillings } = recalculateUnitBillings(billing.unitId, updatedBillingsList);
     
+    // Audit Log
+    const auditLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "UPDATE_STATUS_AIR",
+      targetId: billing.unitId,
+      details: JSON.stringify({
+        unit: unit ? `${unit.block}${unit.unitNumber}` : 'Unknown',
+        month: billing.month,
+        year: billing.year,
+        oldStatus: billing.status,
+        newStatus: newStatus
+      })
+    };
+
     const savePromises = [
       db.saveBilling(updatedBilling),
+      db.saveAuditLog(auditLog),
       ...affectedBillings.map(b => db.saveBilling(b))
     ];
     await Promise.all(savePromises);
@@ -512,10 +559,91 @@ export function KoorDashboard({ user, activeTab: propActiveTab }: KoorDashboardP
         <div className="mt-4 space-y-4">
           <div className="px-1 flex justify-between items-center">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Daftar Unit ({filteredUnits.length})</p>
+            <button 
+              onClick={() => setIsMobileMode(!isMobileMode)}
+              className={cn(
+                "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all border",
+                isMobileMode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-500 border-gray-200"
+              )}
+            >
+              Mode Mobile: {isMobileMode ? "ON" : "OFF"}
+            </button>
           </div>
           {filteredUnits.map(unit => {
             const billing = getUnitBilling(unit.id);
             const isOverdue = isAfterDue && billing?.status === "BELUM_LUNAS";
+
+            if (isMobileMode) {
+              return (
+                <motion.div 
+                  key={unit.id}
+                  layout
+                  className={cn(
+                    "bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between gap-4",
+                    billing ? "border-green-100 bg-green-50/10" : "border-blue-100 bg-blue-50/10"
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-[80px]">
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm border",
+                      billing ? "bg-green-600 text-white border-green-600" : "bg-blue-600 text-white border-blue-600"
+                    )}>
+                      {unit.block}{unit.unitNumber}
+                    </div>
+                    <div className="overflow-hidden">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase truncate leading-none mb-1">{unit.residentName}</p>
+                      <p className="text-[9px] text-gray-500 leading-none">Prev: {billing?.meterPrev || unit.initialMeter}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 flex items-center gap-2">
+                    <input 
+                      type="number"
+                      placeholder="Meteran"
+                      className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                      defaultValue={billing?.meterCurrent || ""}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val && (!billing || parseFloat(val) !== billing.meterCurrent)) {
+                          setSelectedUnit(unit);
+                          setMeterInput(val);
+                          setIsVacantInput(unit.isVacant);
+                          // Trigger save logic if needed or just set state to show modal
+                          // For mobile mode, maybe we should have a direct save button or just use the existing modal
+                        }
+                      }}
+                    />
+                    {!billing ? (
+                      <button 
+                        onClick={() => {
+                          setSelectedUnit(unit);
+                          setIsVacantInput(unit.isVacant);
+                          const allUnitBillings = billings
+                            .filter(b => b.unitId === unit.id)
+                            .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+                          const prevBill = allUnitBillings.find(b => (b.year * 12 + b.month) < (selectedYear * 12 + selectedMonth));
+                          setMeterInput(prevBill ? prevBill.meterCurrent.toString() : unit.initialMeter.toString());
+                        }}
+                        className="p-2 bg-blue-600 text-white rounded-lg shadow-sm"
+                      >
+                        <Save size={16} />
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => {
+                          setSelectedUnit(unit);
+                          setMeterInput(billing.meterCurrent.toString());
+                          setIsVacantInput(billing.isVacant);
+                        }}
+                        className="p-2 bg-gray-100 text-gray-400 rounded-lg border border-gray-200"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            }
 
             return (
               <motion.div 

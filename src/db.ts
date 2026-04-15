@@ -1,4 +1,4 @@
-import { User, Unit, Billing, Settings, FinanceTransaction, FundRequest, Complaint } from "./types";
+import { User, Unit, Billing, Settings, FinanceTransaction, FundRequest, Complaint, AuditLog } from "./types";
 import { supabase } from "./lib/supabase";
 
 const TABLES = {
@@ -8,7 +8,8 @@ const TABLES = {
   SETTINGS: "settings",
   FINANCES: "finances",
   FUND_REQUESTS: "fund_requests",
-  COMPLAINTS: "complaints"
+  COMPLAINTS: "complaints",
+  AUDIT_LOGS: "audit_logs"
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -391,6 +392,48 @@ export const db = {
       .channel('public:settings')
       .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.SETTINGS, filter: 'id=eq.global' }, () => {
         db.getSettings().then(callback);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  getAuditLogs: async (): Promise<AuditLog[]> => {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.AUDIT_LOGS)
+        .select("*")
+        .order("timestamp", { ascending: false });
+      
+      if (error) throw error;
+      return data as AuditLog[];
+    } catch (error) {
+      console.error("Error getting audit logs:", error);
+      return [];
+    }
+  },
+
+  saveAuditLog: async (log: AuditLog) => {
+    try {
+      const { error } = await supabase
+        .from(TABLES.AUDIT_LOGS)
+        .upsert(log);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error saving audit log:", error);
+    }
+  },
+
+  subscribeAuditLogs: (callback: (logs: AuditLog[]) => void) => {
+    db.getAuditLogs().then(callback);
+
+    const channel = supabase
+      .channel('public:audit_logs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.AUDIT_LOGS }, () => {
+        db.getAuditLogs().then(callback);
       })
       .subscribe();
 

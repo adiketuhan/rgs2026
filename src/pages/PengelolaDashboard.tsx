@@ -52,17 +52,18 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   const [selectedFloor, setSelectedFloor] = useState<number | "ALL">("ALL");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
   
-  // States
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [isSaving, setIsSaving] = useState(false);
-  const [complaintResponse, setComplaintResponse] = useState<{id: string, text: string} | null>(null);
-  const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
-
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
   const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
   const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+  // States
+  const [selectedMonth, setSelectedMonth] = useState(lastMonth);
+  const [selectedYear, setSelectedYear] = useState(lastYear);
+  const [isSaving, setIsSaving] = useState(false);
+  const [complaintResponse, setComplaintResponse] = useState<{id: string, text: string} | null>(null);
+  const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
+
   const isAfterDue = new Date().getDate() > settings.dueDay;
 
   useEffect(() => {
@@ -84,24 +85,52 @@ export function PengelolaDashboard({ user, activeTab = "dashboard", onTabChange 
   };
 
   const getOverdueMonths = (unitId: string) => {
-    return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return billings.filter(b => {
+      const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+      return b.unitId === unitId && b.status === "BELUM_LUNAS" && isPastMonth;
+    }).length;
   };
 
   const getOverdueMonthsDetail = (unitId: string) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     return billings
-      .filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS")
+      .filter(b => {
+        const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+        return b.unitId === unitId && b.status === "BELUM_LUNAS" && isPastMonth;
+      })
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .map(b => `${getMonthName(b.month)} ${b.year}`)
       .join(", ");
   };
 
   const getHousingOverdueMonths = (unitId: string) => {
-    return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return billings.filter(b => {
+      const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+      return b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS" && isPastMonth;
+    }).length;
   };
 
   const getHousingOverdueMonthsDetail = (unitId: string) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     return billings
-      .filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS")
+      .filter(b => {
+        const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+        return b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS" && isPastMonth;
+      })
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .map(b => `${getMonthName(b.month)} ${b.year}`)
       .join(", ");

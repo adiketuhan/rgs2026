@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Unit, Settings, User, Billing, FinanceTransaction, FundRequest, FundRequestStatus, Complaint } from "../types";
+import { Unit, Settings, User, Billing, FinanceTransaction, FundRequest, FundRequestStatus, Complaint, AuditLog } from "../types";
 import { db } from "../db";
 import * as XLSX from "xlsx";
 import { MIGRATION_DATA } from "../data/migrationData";
@@ -35,6 +35,21 @@ import {
 import { formatCurrency, cn } from "../lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { UnitDetailModal } from "../components/UnitDetailModal";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  Cell
+} from "recharts";
 
 export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, activeTab?: string }) {
   const [units, setUnits] = useState<Unit[]>([]);
@@ -54,9 +69,14 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const [billingStatusFilter, setBillingStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
   const [housingStatusFilter, setHousingStatusFilter] = useState<"ALL" | "LUNAS" | "BELUM">("ALL");
 
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
   // Meter Input States
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(lastMonth);
+  const [selectedYear, setSelectedYear] = useState(lastYear);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [meterInput, setMeterInput] = useState("");
   const [isVacantInput, setIsVacantInput] = useState(false);
@@ -88,6 +108,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   });
 
   const [detailUnit, setDetailUnit] = useState<Unit | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {
     const unsubscribeUnits = db.subscribeUnits(setUnits);
@@ -97,6 +118,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     const unsubscribeFinances = db.subscribeFinances(setFinances);
     const unsubscribeFundRequests = db.subscribeFundRequests(setFundRequests);
     const unsubscribeComplaints = db.subscribeComplaints(setComplaints);
+    const unsubscribeAuditLogs = db.subscribeAuditLogs(setAuditLogs);
     
     return () => {
       unsubscribeUnits();
@@ -106,6 +128,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
       unsubscribeFinances();
       unsubscribeFundRequests();
       unsubscribeComplaints();
+      unsubscribeAuditLogs();
     };
   }, []);
 
@@ -604,12 +627,21 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const handleSaveMeter = async () => {
     if (!selectedUnit || meterInput === "") return;
     const meterCurrent = Number(meterInput);
+    
+    // Validation
     if (meterCurrent < currentPrevMeter && !isVacantInput) {
       alert(`Meteran baru (${meterCurrent}) tidak boleh lebih kecil dari meteran sebelumnya (${currentPrevMeter})`);
       return;
     }
-    setIsSaving(true);
+
     const usage = Math.max(0, meterCurrent - currentPrevMeter);
+    if (usage > 100) {
+      if (!confirm(`Peringatan: Pemakaian air sangat tinggi (${usage} m³). Apakah Anda yakin data ini benar?`)) {
+        return;
+      }
+    }
+
+    setIsSaving(true);
     const { water, trash } = calculateBill(usage, isVacantInput);
     const lastMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
     const lastYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
@@ -641,8 +673,28 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     else updatedBillingsList.push(newBilling);
     const { affectedBillings } = recalculateUnitBillings(selectedUnit.id, updatedBillingsList);
     
+    // Audit Log
+    const auditLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "INPUT_METER",
+      targetId: selectedUnit.id,
+      details: JSON.stringify({
+        unit: `${selectedUnit.block}${selectedUnit.unitNumber}`,
+        month: selectedMonth,
+        year: selectedYear,
+        meterPrev: currentPrevMeter,
+        meterCurrent,
+        usage
+      })
+    };
+
     const savePromises = [
       db.saveBilling(newBilling),
+      db.saveAuditLog(auditLog),
       ...affectedBillings.map(b => db.saveBilling(b))
     ];
     await Promise.all(savePromises);
@@ -657,14 +709,34 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
   const toggleStatus = async (billingId: string) => {
     const billing = billings.find(b => b.id === billingId);
     if (!billing) return;
+    const unit = units.find(u => u.id === billing.unitId);
     const newStatus = billing.status === "LUNAS" ? "BELUM_LUNAS" : "LUNAS";
     const updatedBilling = { ...billing, status: newStatus as any };
     
     let updatedBillingsList = billings.map(b => b.id === billingId ? updatedBilling : b);
     const { affectedBillings } = recalculateUnitBillings(billing.unitId, updatedBillingsList);
     
+    // Audit Log
+    const auditLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "UPDATE_STATUS_AIR",
+      targetId: billing.unitId,
+      details: JSON.stringify({
+        unit: unit ? `${unit.block}${unit.unitNumber}` : 'Unknown',
+        month: billing.month,
+        year: billing.year,
+        oldStatus: billing.status,
+        newStatus: newStatus
+      })
+    };
+
     const savePromises = [
       db.saveBilling(updatedBilling),
+      db.saveAuditLog(auditLog),
       ...affectedBillings.map(b => db.saveBilling(b))
     ];
     await Promise.all(savePromises);
@@ -679,6 +751,24 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
 
     setIsSaving(true);
     try {
+      const unit = units.find(u => u.id === unitId);
+      const auditLog: AuditLog = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        action: "UPDATE_STATUS_HUNIAN",
+        targetId: unitId,
+        details: JSON.stringify({
+          unit: unit ? `${unit.block}${unit.unitNumber}` : 'Unknown',
+          month: selectedMonth,
+          year: selectedYear,
+          oldStatus: isCurrentlyPaid ? "LUNAS" : "BELUM_LUNAS",
+          newStatus: newStatus
+        })
+      };
+
       if (existingBilling) {
         const updated: Billing = {
           ...existingBilling,
@@ -691,6 +781,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
         setBillings(prev => prev.map(b => b.id === updated.id ? updated : b));
         
         await db.saveBilling(updated);
+        await db.saveAuditLog(auditLog);
       } else {
         const unit = units.find(u => u.id === unitId);
         if (!unit) return;
@@ -729,6 +820,7 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
         setBillings(prev => [...prev, newBilling]);
         
         await db.saveBilling(newBilling);
+        await db.saveAuditLog(auditLog);
       }
     } catch (err) {
       console.error("Error toggling housing status:", err);
@@ -770,25 +862,120 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
     return new Date(2024, monthIndex).toLocaleString('id-ID', { month: 'long' });
   };
 
+  const generateMonthlyReport = () => {
+    const doc = new jsPDF();
+    const monthName = getMonthName(selectedMonth);
+    
+    doc.setFontSize(18);
+    doc.text(`Laporan Bulanan Rusun - ${monthName} ${selectedYear}`, 14, 22);
+    
+    doc.setFontSize(11);
+    doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 30);
+
+    // Summary Data
+    const monthBillings = billings.filter(b => b.month === selectedMonth && b.year === selectedYear);
+    const totalIncome = monthBillings.filter(b => b.status === "LUNAS").reduce((sum, b) => sum + b.waterBill + b.trashBill, 0);
+    const totalDelinquency = monthBillings.filter(b => b.status === "BELUM_LUNAS").reduce((sum, b) => sum + b.waterBill + b.trashBill, 0);
+    
+    const currentBalance = finances.reduce((sum, t) => t.status === "APPROVED" ? (t.type === "INCOME" ? sum + t.amount : sum - t.amount) : sum, 0);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Keterangan', 'Jumlah']],
+      body: [
+        ['Total Pendapatan (Lunas)', formatCurrency(totalIncome)],
+        ['Total Tunggakan', formatCurrency(totalDelinquency)],
+        ['Saldo Kas Saat Ini', formatCurrency(currentBalance)],
+      ],
+    });
+
+    // Detail Table
+    const tableData = monthBillings.map(b => {
+      const unit = units.find(u => u.id === b.unitId);
+      return [
+        unit ? `${unit.block}${unit.unitNumber}` : '?',
+        unit?.residentName || '?',
+        b.usage + ' m3',
+        formatCurrency(b.waterBill),
+        formatCurrency(b.trashBill),
+        formatCurrency(b.totalBill),
+        b.status
+      ];
+    });
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 10,
+      head: [['Unit', 'Nama', 'Pakai', 'Air', 'Sampah', 'Total', 'Status']],
+      body: tableData,
+    });
+
+    doc.save(`Laporan_${monthName}_${selectedYear}.pdf`);
+  };
+
+  const getUsageTrendData = () => {
+    const floorData: { [key: number]: number } = {};
+    units.forEach(u => {
+      const billing = getUnitBilling(u.id);
+      if (billing) {
+        floorData[u.floor] = (floorData[u.floor] || 0) + billing.usage;
+      }
+    });
+
+    return Object.keys(floorData).map(floor => ({
+      floor: `Lantai ${floor}`,
+      usage: floorData[Number(floor)]
+    })).sort((a, b) => a.floor.localeCompare(b.floor));
+  };
+
   const getOverdueMonths = (unitId: string) => {
-    return billings.filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS").length;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    return billings.filter(b => {
+      // Only count as overdue if it's from a past month
+      // or if it's current month but past the due date
+      const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+      return b.unitId === unitId && b.status === "BELUM_LUNAS" && isPastMonth;
+    }).length;
   };
 
   const getOverdueMonthsDetail = (unitId: string) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     return billings
-      .filter(b => b.unitId === unitId && b.status === "BELUM_LUNAS")
+      .filter(b => {
+        const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+        return b.unitId === unitId && b.status === "BELUM_LUNAS" && isPastMonth;
+      })
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .map(b => `${getMonthName(b.month)} ${b.year}`)
       .join(", ");
   };
 
   const getHousingOverdueMonths = (unitId: string) => {
-    return billings.filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS").length;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return billings.filter(b => {
+      const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+      return b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS" && isPastMonth;
+    }).length;
   };
 
   const getHousingOverdueMonthsDetail = (unitId: string) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     return billings
-      .filter(b => b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS")
+      .filter(b => {
+        const isPastMonth = (b.year < currentYear) || (b.year === currentYear && b.month < currentMonth);
+        return b.unitId === unitId && b.housingPaymentStatus === "BELUM_LUNAS" && isPastMonth;
+      })
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .map(b => `${getMonthName(b.month)} ${b.year}`)
       .join(", ");
@@ -1462,12 +1649,45 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
             )}
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2 mb-6">
+                <TrendingUp className="text-blue-600" />
+                Tren Pemakaian Air per Lantai (m³)
+              </h2>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={getUsageTrendData()}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis dataKey="floor" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 600}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 600}} />
+                    <Tooltip 
+                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                      cursor={{fill: '#f8fafc'}}
+                    />
+                    <Bar dataKey="usage" radius={[4, 4, 0, 0]}>
+                      {getUsageTrendData().map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.usage > 100 ? '#ef4444' : '#3b82f6'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-[10px] text-gray-400 italic mt-4">* Batang merah menandakan pemakaian tinggi ({">"}100 m³)</p>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                   <FileText className="text-blue-600" />
                   Laporan Keuangan Per Lantai
                 </h2>
                 <div className="flex gap-2">
+                  <button 
+                    onClick={generateMonthlyReport}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 text-sm"
+                  >
+                    <Download size={16} />
+                    PDF
+                  </button>
                   <select 
                     className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
                     value={selectedMonth}
@@ -2409,6 +2629,74 @@ export function AdminDashboard({ user, activeTab = "dashboard" }: { user: User, 
               </div>
             </form>
           </motion.div>
+        </div>
+      )}
+
+      {/* Audit Log Tab */}
+      {activeTab === "log" && (
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Audit Log</h2>
+              <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Riwayat Perubahan Data</p>
+            </div>
+            <button 
+              onClick={() => db.getAuditLogs().then(setAuditLogs)}
+              className="p-3 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-all border border-gray-200"
+            >
+              <RefreshCw size={20} />
+            </button>
+          </div>
+          
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold">
+                <tr>
+                  <th className="px-8 py-4">Waktu</th>
+                  <th className="px-8 py-4">User</th>
+                  <th className="px-8 py-4">Aksi</th>
+                  <th className="px-8 py-4">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {auditLogs.map(log => {
+                  let details = { unit: '?', meterPrev: 0, meterCurrent: 0, usage: 0, oldStatus: '?', newStatus: '?' };
+                  try {
+                    details = JSON.parse(log.details);
+                  } catch (e) {}
+                  
+                  return (
+                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-8 py-4 whitespace-nowrap text-gray-500 font-medium">
+                        {new Date(log.timestamp).toLocaleString('id-ID')}
+                      </td>
+                      <td className="px-8 py-4">
+                        <p className="font-bold text-gray-900">{log.userName}</p>
+                        <p className="text-[10px] text-gray-400 uppercase font-bold">{log.userRole}</p>
+                      </td>
+                      <td className="px-8 py-4">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                          log.action === "INPUT_METER" ? "bg-blue-50 text-blue-600 border border-blue-100" :
+                          log.action === "UPDATE_STATUS_AIR" ? "bg-green-50 text-green-600 border border-green-100" :
+                          "bg-purple-50 text-purple-600 border border-purple-100"
+                        )}>
+                          {log.action.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-xs text-gray-600 font-medium">
+                        {log.action === "INPUT_METER" ? (
+                          `Unit ${details.unit}: ${details.meterPrev} -> ${details.meterCurrent} (${details.usage} m³)`
+                        ) : (
+                          `Unit ${details.unit}: ${details.oldStatus} -> ${details.newStatus}`
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
